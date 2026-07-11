@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>スタディログ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Klee+One:wght@400;600&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#fdfcf8; --grid:#dde7f2; --grid-strong:#c7d6ea; --ink:#242320; --muted:#7a7568;
+    --red:#c1442e; --red-soft:#f4e2dd; --green:#3f7a56; --green-soft:#dfeee3;
+    --yellow:#d9a441; --yellow-soft:#faf1de; --card:#ffffff; --line:#e4ddd0;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:'Zen Kaku Gothic New', sans-serif; color:var(--ink); background-color:var(--paper);
+    background-image:linear-gradient(var(--grid) 1px, transparent 1px),linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size:22px 22px; min-height:100vh;
+  }
+  .app{max-width:520px;margin:0 auto;padding:16px 16px 48px;}
+  header{display:flex;align-items:center;justify-content:space-between;padding:14px 4px 18px;border-bottom:2px solid var(--grid-strong);margin-bottom:18px;}
+  header h1{font-size:20px;margin:0;letter-spacing:0.02em;display:flex;align-items:center;gap:8px;}
+  .tabs{display:flex;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px;}
+  .tab-btn{border:none;background:transparent;padding:7px 14px;border-radius:999px;font-family:inherit;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;}
+  .tab-btn.active{background:var(--ink);color:#fff;}
+  section[hidden]{display:none;}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px;box-shadow:0 1px 0 rgba(0,0,0,0.02);}
+  .today{font-size:13px;color:var(--muted);margin-bottom:2px;}
+  .sub-note{font-size:12px;color:var(--muted);}
+  .link-btn{display:inline-block;font-size:12px;color:#3a6ea5;text-decoration:underline;margin-bottom:8px;cursor:pointer;}
+  .error-text{color:var(--red);font-size:12px;margin-top:8px;}
+
+  .subject-row{border:1px solid var(--line);border-radius:12px;margin-top:10px;overflow:hidden;}
+  .subject-row.warn{border-color:var(--yellow);}
+  .subject-row.progress{border-color:#c98a3a;}
+  .subject-row.done{border-color:var(--green);}
+  .subject-head{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;background:#fbfaf6;}
+  .subject-name{font-weight:700;font-size:13px;width:82px;flex-shrink:0;color:var(--ink);}
+  .subject-task{flex:1;font-size:14px;color:var(--ink);}
+  .status-badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;}
+  .status-badge.notstarted{background:var(--grid);color:var(--muted);}
+  .status-badge.warn{background:var(--yellow-soft);color:#8a5a00;}
+  .status-badge.progress{background:#fdeedb;color:#a15b00;}
+  .status-badge.done{background:var(--green-soft);color:var(--green);}
+  .status-badge.star{background:#fff3d6;color:#a1720a;}
+  .chevron{color:var(--muted);font-size:12px;margin-left:2px;}
+
+  .subject-body{padding:14px;border-top:1px solid var(--line);background:#fffefb;display:none;}
+  .subject-body.open{display:block;}
+
+  .warn-banner{background:var(--yellow-soft);color:#8a5a00;font-size:12px;font-weight:600;padding:8px 10px;border-radius:8px;margin-bottom:10px;}
+
+  .photo-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:18px;border:2px dashed var(--grid-strong);border-radius:12px;background:#fbfaf6;color:var(--muted);font-family:inherit;font-size:14px;cursor:pointer;}
+  .photo-btn.done{border-style:solid;border-color:var(--green);color:var(--green);}
+  .photo-thumb{width:100%;max-height:160px;object-fit:cover;border-radius:10px;margin-top:8px;}
+
+  .action-btn{width:100%;padding:11px;border:none;border-radius:10px;background:var(--ink);color:#fff;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-top:10px;}
+  .action-btn.secondary{background:none;border:1px solid var(--ink);color:var(--ink);}
+  .action-btn:disabled{opacity:0.4;}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:-2px;margin-right:6px;}
+  .spinner.dark{border:2px solid var(--ink);border-top-color:transparent;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .retry-box{border:1px solid var(--red);background:var(--red-soft);border-radius:10px;padding:12px;margin-top:10px;}
+  .retry-box .num{font-weight:700;font-size:13px;color:var(--red);margin-bottom:4px;}
+  .retry-box .explain{font-family:'Klee One',sans-serif;font-size:14px;color:var(--red);line-height:1.5;margin-bottom:10px;}
+  .retry-box.resolved{border-color:var(--green);background:var(--green-soft);}
+  .retry-box.resolved .explain{color:var(--green);}
+  .retry-problem{background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:14px;margin-bottom:8px;}
+
+  .quiz-counter{font-size:12px;color:var(--muted);margin-bottom:8px;}
+  .quiz-prompt{text-align:center;font-family:'Klee One',sans-serif;font-size:28px;padding:16px 0 6px;color:var(--ink);}
+  .quiz-sub{text-align:center;font-size:12px;color:var(--muted);margin-bottom:14px;}
+  .quiz-input{width:100%;padding:12px;border:2px solid var(--grid-strong);border-radius:10px;font-family:inherit;font-size:16px;text-align:center;margin-bottom:10px;}
+  .quiz-input.correct{border-color:var(--green);background:var(--green-soft);}
+  .quiz-input.wrong{border-color:var(--red);background:var(--red-soft);}
+  .quiz-feedback{text-align:center;font-size:13px;margin-bottom:10px;font-weight:600;}
+  .quiz-feedback.correct{color:var(--green);}
+  .quiz-feedback.wrong{color:var(--red);}
+  .quiz-done-banner{text-align:center;padding:20px;color:var(--green);font-weight:700;font-size:15px;}
+
+  .month-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .month-nav button{background:none;border:none;font-size:20px;color:var(--ink);cursor:pointer;padding:6px 10px;}
+  .month-nav span{font-weight:600;font-size:15px;}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;}
+  .cal-dow{font-size:11px;color:var(--muted);padding:4px 0;}
+  .cal-day{position:relative;aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:13px;background:#fbfaf6;border:1px solid var(--line);cursor:pointer;color:var(--ink);}
+  .cal-day.empty{background:transparent;border:none;cursor:default;}
+  .cal-day.selected{border:2px solid var(--ink);}
+  .cal-day .star-mark{font-size:9px;line-height:1;margin-top:1px;}
+  .cal-day .dots{display:flex;gap:2px;margin-top:2px;}
+  .cal-day .dot{width:5px;height:5px;border-radius:50%;}
+  .dot.green{background:var(--green);}
+  .dot.red{background:var(--red);}
+
+  .day-detail{margin-top:18px;}
+  .day-detail h3{font-size:14px;margin-bottom:10px;color:var(--muted);}
+  .sub-block{padding:12px 0;border-bottom:1px solid var(--line);}
+  .sub-block:last-child{border-bottom:none;}
+  .sub-block-head{display:flex;gap:10px;align-items:center;}
+  .sub-thumb{width:48px;height:48px;object-fit:cover;border-radius:8px;border:1px solid var(--line);flex-shrink:0;background:#e2ded2;}
+  .sub-subject-tag{display:inline-block;font-size:11px;font-weight:700;background:var(--green-soft);color:var(--green);padding:2px 8px;border-radius:999px;margin-right:4px;}
+  .sub-time{font-size:12px;color:var(--muted);margin-top:2px;}
+  .empty-state{color:var(--muted);font-size:13px;text-align:center;padding:24px 0;}
+  .loading-state{color:var(--muted);font-size:13px;text-align:center;padding:24px 0;}
+
+  .analysis-card{border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:14px;background:#fbfaf6;}
+  .analysis-unit{font-weight:700;font-size:15px;margin-bottom:10px;color:var(--ink);}
+  .analysis-line{font-size:13px;line-height:1.7;margin-bottom:8px;}
+  .analysis-line:last-child{margin-bottom:0;}
+  .analysis-label{font-weight:700;margin-right:4px;}
+  .analysis-label.trouble{color:var(--red);}
+  .analysis-label.tip{color:var(--green);}
+  .analysis-text{color:var(--ink);}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>🎯 スタディログ</h1>
+    <div class="tabs">
+      <button class="tab-btn active" id="tab-student">きょうの課題</button>
+      <button class="tab-btn" id="tab-parent">管理</button>
+    </div>
+  </header>
+
+  <section id="student-view">
+    <div class="card">
+      <div class="today" id="today-label"></div>
+      <div id="subject-list"><div class="loading-state">読み込み中…</div></div>
+    </div>
+  </section>
+
+  <section id="parent-view" hidden>
+    <div class="tabs" style="margin-bottom:14px;">
+      <button class="tab-btn active" id="subtab-calendar">カレンダー</button>
+      <button class="tab-btn" id="subtab-retry">テスト前やり直し</button>
+      <button class="tab-btn" id="subtab-analysis">分析</button>
+    </div>
+
+    <div id="parent-calendar-subview">
+      <div class="card">
+        <div class="sub-note" style="margin-bottom:6px;font-weight:600;">📋 課題表を同期</div>
+        <div id="sync-area"></div>
+      </div>
+      <div class="card">
+        <div class="month-nav">
+          <button id="prev-month">‹</button>
+          <span id="month-label"></span>
+          <button id="next-month">›</button>
+        </div>
+        <div class="cal-grid" id="cal-dow-row"></div>
+        <div class="cal-grid" id="cal-grid"></div>
+
+        <div class="day-detail" id="day-detail">
+          <h3 id="day-detail-title">日付を選んでね</h3>
+          <div id="day-detail-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="parent-retry-subview" hidden>
+      <div class="card">
+        <div class="today">今までに間違えた問題だけをまとめて解き直せます</div>
+        <div id="retry-list" style="margin-top:14px;"><div class="loading-state">読み込み中…</div></div>
+      </div>
+    </div>
+
+    <div id="parent-analysis-subview" hidden>
+      <div class="card">
+        <div class="today">教科ごとの弱点分析</div>
+        <div id="subject-analysis-list" style="margin-top:14px;"><div class="loading-state">読み込み中…</div></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
