@@ -32,7 +32,7 @@ const state = subjectsConfig.map((cfg) => {
   if (cfg.type === 'work-photo') {
     return { uploading:false, uploaded:false, marksDetected:false, marks:{}, explanations:{}, retryProblems:{}, retryResolved:{}, submissionId:null, refLink:'', errorMsg:null };
   }
-  return { uploading:false, uploaded:false, started:false, rawItems:[], queue:[], current:null, input:'', feedback:null, wrongItems:[], done:false, errorMsg:null };
+  return { uploading:false, uploaded:false, started:false, rawItems:[], queue:[], current:null, input:'', feedback:null, wrongItems:[], correctCounts:{}, done:false, errorMsg:null };
 });
 
 let openIdx = null;
@@ -316,8 +316,15 @@ function renderQuizBody(cfg, idx){
   }
 
   const pair = s.current;
+  const requiredPasses = cfg.type === 'vocab-quiz' ? 3 : 1;
   const feedbackHtml = s.feedback
-    ? `<div class="quiz-feedback ${s.feedback.correct ? 'correct' : 'wrong'}">${s.feedback.correct ? '正解！' : `正解は "${escapeHtml(s.feedback.answer)}"`}</div>`
+    ? `<div class="quiz-feedback ${s.feedback.correct ? 'correct' : 'wrong'}">${
+        s.feedback.correct
+          ? (s.feedback.requiredPasses > 1
+              ? (s.feedback.passCount >= s.feedback.requiredPasses ? '🎉 合格！(3回正解達成)' : `正解！(${s.feedback.passCount}/${s.feedback.requiredPasses}回)`)
+              : '正解！')
+          : `正解は "${escapeHtml(s.feedback.answer)}"`
+      }</div>`
     : '';
   return `
     <div class="quiz-counter">のこり ${s.queue.length + 1} 問</div>
@@ -434,13 +441,23 @@ function attachSubjectHandlers(){
       const inputEl = document.getElementById('quiz-input-' + idx);
       const typed = (inputEl ? inputEl.value : '').trim().toLowerCase();
       const correctAnswer = String(s.current[answerKey]).trim().toLowerCase();
-      const normalize = (s) => s.replace(/[.\u2026]+$/g, '').replace(/\s+/g, ' ').trim();
+      const normalize = (str) => str.replace(/[.\u2026]+$/g, '').replace(/\s+/g, ' ').trim();
       const isCorrect = normalize(typed) === normalize(correctAnswer);
+
+      const requiredPasses = cfg.type === 'vocab-quiz' ? 3 : 1;
+      s.correctCounts = s.correctCounts || {};
+      const itemId = s.current._id;
+
       if(!isCorrect){
         s.wrongItems.push({ prompt: s.current[promptKey], answer: s.current[answerKey] });
         s.queue.push(s.current);
+      } else {
+        s.correctCounts[itemId] = (s.correctCounts[itemId] || 0) + 1;
+        if(s.correctCounts[itemId] < requiredPasses){
+          s.queue.push(s.current);
+        }
       }
-      s.feedback = { correct:isCorrect, answer:s.current[answerKey] };
+      s.feedback = { correct:isCorrect, answer:s.current[answerKey], passCount: s.correctCounts[itemId] || 0, requiredPasses };
       s.input = typed;
       renderAll();
     };
@@ -533,7 +550,8 @@ async function handleQuizUpload(idx){
       body: JSON.stringify({ image_base64: base64, quiz_type: QUIZ_TYPE_MAP[cfg.type] })
     });
 
-    s.rawItems = result.items;
+    s.rawItems = result.items.map((it, i) => ({ ...it, _id: i }));
+    s.correctCounts = {};
     s.uploaded = true;
   }catch(err){
     s.errorMsg = err.message;
@@ -780,7 +798,7 @@ async function renderRetryPage(){
     return;
   }
 
-    const unresolved = [];
+  const unresolved = [];
   const resolved = [];
   submissions.forEach(s => {
     const marks = s.marks || {};
@@ -820,7 +838,7 @@ async function renderRetryPage(){
       <div class="retry-box">
         <div class="num">${escapeHtml(w.subject)} ${escapeHtml(w.task)} ${escapeHtml(w.num)}</div>
         <div class="explain">${escapeHtml(w.explain)}</div>
-        <div class="retry-problem">類似問題: ${escapeHtml(w.retryProblem)}</div>
+        <div class="retry-problem">${escapeHtml(w.retryProblem)}</div>
         <button class="action-btn secondary" data-retry-page-resolve="${i}">とけた！</button>
       </div>
     `).join('');
@@ -845,9 +863,8 @@ async function renderRetryPage(){
       const i = Number(el.getAttribute('data-retry-page-resolve'));
       const item = unresolved[i];
       const submission = submissions.find(s => s.id === item.submissionId);
-      const mergedResolved = Object.assign({}, (submission && submission.retry_resolved) || {},       const key = item.isQuiz ? item.quizKey : item.num;
+      const key = item.isQuiz ? item.quizKey : item.num;
       const mergedResolved = Object.assign({}, (submission && submission.retry_resolved) || {}, { [key]: true });
-);
       try{
         await apiCall('/api/submissions', {
           method:'PATCH', headers:{'Content-Type':'application/json'},
