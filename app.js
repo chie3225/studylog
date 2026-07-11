@@ -434,7 +434,8 @@ function attachSubjectHandlers(){
       const inputEl = document.getElementById('quiz-input-' + idx);
       const typed = (inputEl ? inputEl.value : '').trim().toLowerCase();
       const correctAnswer = String(s.current[answerKey]).trim().toLowerCase();
-      const isCorrect = typed === correctAnswer;
+      const normalize = (s) => s.replace(/[.\u2026]+$/g, '').replace(/\s+/g, ' ').trim();
+      const isCorrect = normalize(typed) === normalize(correctAnswer);
       if(!isCorrect){
         s.wrongItems.push({ prompt: s.current[promptKey], answer: s.current[answerKey] });
         s.queue.push(s.current);
