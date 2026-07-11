@@ -21,7 +21,6 @@ async function callClaude({ system, imageBase64, text, maxTokens }) {
     body: JSON.stringify({
       model: 'claude-sonnet-5',
       max_tokens: maxTokens || 2000,
-      temperature: 0,
       system,
       messages: [{ role: 'user', content }],
     }),
