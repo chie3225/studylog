@@ -39,7 +39,7 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const rawText = await callClaude({ system, imageBase64: image_base64, text: '上記のフォーマットで出力してください。', maxTokens: 2000 });
+    const rawText = await callClaude({ system, imageBase64: image_base64, text: '上記のフォーマットで出力してください。', maxTokens: 3000 });
     const parsed = extractJson(rawText);
     if (!Array.isArray(parsed.items) || !parsed.items.length) {
       throw new Error('問題を抽出できませんでした');
