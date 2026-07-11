@@ -86,7 +86,11 @@ async function apiCall(path, options){
   const res = await fetch(path, options);
   let data;
   try{ data = await res.json(); }
-  catch(e){ throw new Error('サーバーからの応答が正しくありません'); }
+  catch(e){
+    const text = await res.text().catch(()=> '(本文取得失敗)');
+    throw new Error('サーバー応答異常 status=' + res.status + ' body=' + text.slice(0, 300));
+  }
+
   if(!res.ok){ throw new Error(data.error || 'サーバーエラーが発生しました'); }
   return data;
 }
