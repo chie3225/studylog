@@ -312,11 +312,13 @@ function renderQuizBody(cfg, idx){
   }
 
   if(s.done){
-    return `<div class="quiz-done-banner">${doneMessage}（間違えた数: ${s.wrongItems.length}個）</div>`;
+    return `
+      <div class="quiz-done-banner">${doneMessage}（間違えた数: ${s.wrongItems.length}個）</div>
+      <button class="action-btn secondary" data-quiz-restart="${idx}" style="margin-top:8px;">🔁 もう一度チャレンジする</button>
+    `;
   }
 
   const pair = s.current;
-  const requiredPasses = cfg.type === 'vocab-quiz' ? 3 : 1;
   const feedbackHtml = s.feedback
     ? `<div class="quiz-feedback ${s.feedback.correct ? 'correct' : 'wrong'}">${
         s.feedback.correct
@@ -425,6 +427,22 @@ function attachSubjectHandlers(){
       s.queue = shuffled.slice(1);
       s.current = shuffled[0];
       s.started = true;
+      s.input = ''; s.feedback = null;
+      renderAll();
+    };
+  });
+
+  document.querySelectorAll('[data-quiz-restart]').forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      const idx = Number(el.getAttribute('data-quiz-restart'));
+      const s = state[idx];
+      const shuffled = [...s.rawItems].sort(() => Math.random() - 0.5);
+      s.queue = shuffled.slice(1);
+      s.current = shuffled[0];
+      s.done = false;
+      s.wrongItems = [];
+      s.correctCounts = {};
       s.input = ''; s.feedback = null;
       renderAll();
     };
