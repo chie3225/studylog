@@ -521,8 +521,7 @@ async function handleQuizUpload(idx){
   renderAll();
 
   try{
-    const { base64, dataUrl } = await resizeImage(file, 1000, 0.7);
-    s.photoDataUrl = dataUrl;
+    const { base64, dataUrl } = await resizeImage(file, 800, 0.5);
 
     const result = await apiCall('/api/generate-quiz', {
       method:'POST', headers:{'Content-Type':'application/json'},
