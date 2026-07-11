@@ -312,9 +312,13 @@ function renderQuizBody(cfg, idx){
   }
 
   if(s.done){
+    const canRestart = Array.isArray(s.rawItems) && s.rawItems.length > 0;
     return `
       <div class="quiz-done-banner">${doneMessage}（間違えた数: ${s.wrongItems.length}個）</div>
-      <button class="action-btn secondary" data-quiz-restart="${idx}" style="margin-top:8px;">🔁 もう一度チャレンジする</button>
+      ${canRestart
+        ? `<button class="action-btn secondary" data-quiz-restart="${idx}" style="margin-top:8px;">🔁 もう一度チャレンジする</button>`
+        : `<div class="sub-note" style="margin-top:8px;">もう一度やり直すには、画像をアップロードし直してね</div><button class="photo-btn" data-quiz-reupload="${idx}" style="margin-top:6px;">${uploadLabel}</button>`
+      }
     `;
   }
 
@@ -415,6 +419,18 @@ function attachSubjectHandlers(){
       e.stopPropagation();
       const idx = Number(el.getAttribute('data-quiz-upload'));
       await handleQuizUpload(idx);
+    };
+  });
+
+  document.querySelectorAll('[data-quiz-reupload]').forEach(el => {
+    el.onclick = async (e) => {
+      e.stopPropagation();
+      const idx = Number(el.getAttribute('data-quiz-reupload'));
+      const s = state[idx];
+      s.uploaded = false; s.started = false; s.done = false;
+      s.rawItems = []; s.queue = []; s.current = null;
+      s.wrongItems = []; s.correctCounts = {}; s.input = ''; s.feedback = null;
+      renderAll();
     };
   });
 
