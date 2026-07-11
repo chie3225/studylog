@@ -845,7 +845,9 @@ async function renderRetryPage(){
       const i = Number(el.getAttribute('data-retry-page-resolve'));
       const item = unresolved[i];
       const submission = submissions.find(s => s.id === item.submissionId);
-      const mergedResolved = Object.assign({}, (submission && submission.retry_resolved) || {}, { [item.num]: true });
+      const mergedResolved = Object.assign({}, (submission && submission.retry_resolved) || {},       const key = item.isQuiz ? item.quizKey : item.num;
+      const mergedResolved = Object.assign({}, (submission && submission.retry_resolved) || {}, { [key]: true });
+);
       try{
         await apiCall('/api/submissions', {
           method:'PATCH', headers:{'Content-Type':'application/json'},
