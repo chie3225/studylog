@@ -780,7 +780,7 @@ async function renderRetryPage(){
     return;
   }
 
-  const unresolved = [];
+    const unresolved = [];
   const resolved = [];
   submissions.forEach(s => {
     const marks = s.marks || {};
@@ -794,6 +794,18 @@ async function renderRetryPage(){
       };
       if(retryResolved[num]) resolved.push(item); else unresolved.push(item);
     });
+
+    if(s.quiz_result && Array.isArray(s.quiz_result.wrongItems)){
+      s.quiz_result.wrongItems.forEach((w, i) => {
+        const key = 'q' + i;
+        const item = {
+          submissionId: s.id, subject: s.subject, task: s.task, num: '',
+          explain: `問題「${w.prompt}」の正解は「${w.answer}」`,
+          retryProblem: '', isQuiz: true, quizKey: key,
+        };
+        if(retryResolved[key]) resolved.push(item); else unresolved.push(item);
+      });
+    }
   });
 
   if(!unresolved.length && !resolved.length){
