@@ -99,7 +99,7 @@ function openQAModal(title, items){
 
 function printAttemptSheet(title, attempts, fallbackItems){
   const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:1000px;height:1400px;border:0;';
+  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:1400px;height:1000px;border:0;';
   document.body.appendChild(iframe);
   const doc = iframe.contentWindow.document;
 
@@ -107,18 +107,20 @@ function printAttemptSheet(title, attempts, fallbackItems){
   if(attempts && attempts.length){
     rows = attempts.map((a, i) => `
       <div class="item">
-        <div class="num">問${i+1}</div>
-        <div class="prompt">${escapeHtml(a.prompt)}</div>
-        <div class="${a.correct ? 'ok' : 'ng'}">答え: ${escapeHtml(a.userAnswer || '(無回答)')} ${a.correct ? '○' : '×'}</div>
-        ${a.correct ? '' : `<div class="correct">正解: ${escapeHtml(a.correctAnswer)}</div>`}
+        <span class="num">${i+1}.</span>
+        <span class="prompt">${escapeHtml(a.prompt)}</span>
+        <span class="arrow">→</span>
+        <span class="${a.correct ? 'ok' : 'ng'}">${escapeHtml(a.userAnswer || '(無回答)')} ${a.correct ? '○' : '×'}</span>
+        ${a.correct ? '' : `<span class="correct">(正: ${escapeHtml(a.correctAnswer)})</span>`}
       </div>
     `).join('');
   } else if(fallbackItems && fallbackItems.length){
     rows = fallbackItems.map((it, i) => `
       <div class="item">
-        <div class="num">問${i+1}</div>
-        <div class="prompt">${escapeHtml(it.prompt)}</div>
-        <div class="ok">→ ${escapeHtml(it.answer)}</div>
+        <span class="num">${i+1}.</span>
+        <span class="prompt">${escapeHtml(it.prompt)}</span>
+        <span class="arrow">→</span>
+        <span class="ok">${escapeHtml(it.answer)}</span>
       </div>
     `).join('');
   }
@@ -127,23 +129,28 @@ function printAttemptSheet(title, attempts, fallbackItems){
   doc.write(`
     <html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
     <style>
-      @page { size: A4; margin: 10mm; }
+      @page { size: A4 landscape; margin: 8mm; }
       * { box-sizing: border-box; }
       html, body { width: 100%; margin:0; padding:0; }
-      body { font-family: sans-serif; padding: 10px; color:#222; }
-      h2 { margin: 0 0 10px; font-size:15px; }
+      body { font-family: sans-serif; padding: 8px; color:#222; }
+      h2 { margin: 0 0 8px; font-size:13px; }
       .cols {
-        column-count: 3;
-        column-gap: 16px;
+        column-count: 4;
+        column-gap: 12px;
         column-fill: auto;
         width: 100%;
       }
-      .item { break-inside: avoid; -webkit-column-break-inside: avoid; padding: 3px 0 5px; border-bottom: 1px solid #ddd; font-size: 10px; line-height:1.35; }
-      .num { color:#999; font-size:8.5px; }
+      .item {
+        break-inside: avoid; -webkit-column-break-inside: avoid;
+        padding: 1px 0 2px; border-bottom: 1px solid #e5e5e5;
+        font-size: 8px; line-height:1.25;
+      }
+      .num { color:#999; margin-right:2px; }
       .prompt { font-weight:700; }
+      .arrow { color:#999; margin:0 2px; }
       .ok { color:#2a8a5a; }
       .ng { color:#c0392b; }
-      .correct { color:#2a8a5a; font-size:9px; }
+      .correct { color:#2a8a5a; margin-left:3px; }
     </style>
     </head>
     <body>
