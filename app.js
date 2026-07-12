@@ -1193,7 +1193,6 @@ async function renderRetryPage(){
     `).join('');
   }
 
-
   listEl.innerHTML = html;
 
   document.querySelectorAll('[data-retry-tab]').forEach(el => {
@@ -1259,6 +1258,7 @@ async function renderRetryPage(){
     };
   });
 }
+
 
 
 
