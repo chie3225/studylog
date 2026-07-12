@@ -1026,7 +1026,11 @@ function renderDayDetail(){
 }
 
 // ================= 管理タブ: テスト前やり直し =================
-let retryPageState = {}; // key -> { grading:false, feedback:null }
+let retryPageState = {}; // key -> { grading:false, feedback:null, answer:'' }
+
+function buildDedupeKey(subject, task, text){
+  return `${subject}|${task}|${(text || '').trim().toLowerCase()}`;
+}
 
 async function renderRetryPage(){
   const listEl = document.getElementById('retry-list');
@@ -1043,8 +1047,8 @@ async function renderRetryPage(){
     return;
   }
 
-  const unresolved = [];
-  const resolved = [];
+  const allItems = []; // 解決済みも含めた全件(頻度計算用)
+
   submissions.forEach(s => {
     const marks = s.marks || {};
     const retryResolved = s.retry_resolved || {};
@@ -1056,67 +1060,114 @@ async function renderRetryPage(){
       const rp = retryProblems[num] || {};
       const problemText = typeof rp === 'string' ? rp : (rp.problem || '');
       const modelAnswer = typeof rp === 'string' ? '' : (rp.answer || '');
-      const item = {
-        key: `w-${s.id}-${num}`, submissionId: s.id, subject: s.subject, task: s.task, num,
+      allItems.push({
+        key: `w-${s.id}-${num}`, submissionId: s.id, subject: s.subject, task: s.task, num, date: s.date,
         explain: (s.explanations || {})[num] || '',
         retryProblem: problemText, modelAnswer, isMath: true,
         savedAnswer: retryAnswers[num] || '',
-      };
-      if(retryResolved[num]) resolved.push(item); else unresolved.push(item);
+        resolved: !!retryResolved[num],
+        dedupeKey: buildDedupeKey(s.subject, s.task, problemText || (s.explanations || {})[num]),
+      });
     });
 
     if(s.quiz_result && Array.isArray(s.quiz_result.wrongItems)){
       s.quiz_result.wrongItems.forEach((w, i) => {
         const key = 'q' + i;
-        const item = {
-          key: `z-${s.id}-${key}`, submissionId: s.id, subject: s.subject, task: s.task, num:'',
+        allItems.push({
+          key: `z-${s.id}-${key}`, submissionId: s.id, subject: s.subject, task: s.task, num:'', date: s.date,
           explain: `問題「${w.prompt}」`, retryProblem: w.prompt, modelAnswer: w.answer,
           isQuiz: true, quizKey: key, savedAnswer: '',
-        };
-        if(retryResolved[key]) resolved.push(item); else unresolved.push(item);
+          resolved: !!retryResolved[key],
+          dedupeKey: buildDedupeKey(s.subject, s.task, w.prompt),
+        });
       });
     }
   });
 
-  if(!unresolved.length && !resolved.length){
+  if(!allItems.length){
     listEl.innerHTML = '<div class="empty-state">まだ間違えた問題の記録がありません</div>';
     return;
   }
 
-  let html = '';
-  if(unresolved.length){
-    html += `<div class="sub-note" style="margin-bottom:8px;font-weight:600;">未解決 ${unresolved.length}件</div>`;
-    html += unresolved.map((item) => {
+  // 重要度(=同じ問題を何度間違えているか)を計算
+  const freqMap = {};
+  allItems.forEach(it => { freqMap[it.dedupeKey] = (freqMap[it.dedupeKey] || 0) + 1; });
+  allItems.forEach(it => { it.occurrences = freqMap[it.dedupeKey]; });
+
+  const unresolved = allItems.filter(it => !it.resolved);
+  const resolved = allItems.filter(it => it.resolved);
+
+  if(!unresolved.length){
+    listEl.innerHTML = `<div class="warn-banner" style="background:var(--green-soft);color:var(--green);">🎉 今のところ未解決の間違いはありません</div>` +
+      (resolved.length ? `<div class="sub-note" style="margin-top:10px;">解決済み ${resolved.length}件</div>` : '');
+    return;
+  }
+
+  // 科目ごとにグループ化
+  const bySubject = {};
+  unresolved.forEach(it => { (bySubject[it.subject] = bySubject[it.subject] || []).push(it); });
+
+  // グループ内を並べ替え:間違えた回数が多い順→古い日付が先
+  Object.values(bySubject).forEach(arr => {
+    arr.sort((a, b) => (b.occurrences - a.occurrences) || (a.date < b.date ? -1 : 1));
+  });
+
+  let html = `<div class="sub-note" style="margin-bottom:10px;font-weight:600;">未解決 ${unresolved.length}件</div>`;
+
+  Object.keys(bySubject).forEach(subject => {
+    const items = bySubject[subject];
+    html += `<div class="sub-note" style="margin:14px 0 8px;font-weight:700;font-size:15px;">📘 ${escapeHtml(subject)}(${items.length}件)</div>`;
+    html += items.map((item) => {
       const st = retryPageState[item.key] || {};
       const feedback = st.feedback;
       const grading = st.grading;
       const val = st.answer != null ? st.answer : item.savedAnswer;
+      const badge = item.occurrences > 1 ? `<span style="background:#fde2e2;color:#c0392b;font-size:11px;padding:2px 6px;border-radius:8px;margin-left:6px;">${item.occurrences}回目</span>` : '';
       return `
         <div class="retry-box">
-          <div class="num">${escapeHtml(item.subject)} ${escapeHtml(item.task)} ${escapeHtml(item.num)}</div>
+          <div class="num">${escapeHtml(item.task)} ${escapeHtml(item.num)}${badge}</div>
           <div class="explain">${escapeHtml(item.explain)}</div>
           <div class="retry-problem">${escapeHtml(item.retryProblem)}</div>
           <input type="text" class="quiz-input ${feedback ? (feedback.correct ? 'correct' : 'wrong') : ''}" id="retry-page-input-${item.key}" value="${escapeHtml(val)}" placeholder="ここに答えを書いてね" ${grading ? 'disabled' : ''}>
           ${feedback ? `<div class="quiz-feedback ${feedback.correct ? 'correct' : 'wrong'}">${escapeHtml(feedback.feedback)}</div>` : ''}
-          <button class="action-btn secondary" data-retry-page-check="${item.key}" ${grading ? 'disabled' : ''}>${grading ? '採点中…' : 'こたえ合わせ'}</button>
+          <div style="display:flex;gap:6px;margin-top:6px;">
+            <button class="action-btn secondary" style="flex:1;" data-retry-page-check="${item.key}" ${grading ? 'disabled' : ''}>${grading ? '採点中…' : 'こたえ合わせ'}</button>
+            <button class="action-btn secondary" style="flex:1;background:#f0f0f0;" data-retry-page-dismiss="${item.key}">✅ もう大丈夫</button>
+          </div>
         </div>
       `;
     }).join('');
-  } else {
-    html += `<div class="warn-banner" style="background:var(--green-soft);color:var(--green);">🎉 今のところ未解決の間違いはありません</div>`;
-  }
+  });
 
   if(resolved.length){
-    html += `<div class="sub-note" style="margin:16px 0 8px;font-weight:600;">解決済み ${resolved.length}件</div>`;
-    html += resolved.map(w => `
-      <div class="retry-box resolved">
-        <div class="num">${escapeHtml(w.subject)} ${escapeHtml(w.task)} ${escapeHtml(w.num)} ✅ 直せました</div>
-        <div class="explain">${escapeHtml(w.explain)}</div>
-      </div>
-    `).join('');
+    html += `<div class="sub-note" style="margin:16px 0 4px;font-weight:600;">解決済み ${resolved.length}件</div>`;
   }
 
   listEl.innerHTML = html;
+
+  async function resolveItem(item, extraAnswer){
+    const submission = submissions.find(s => s.id === item.submissionId);
+    const resolvedKey = item.isQuiz ? item.quizKey : item.num;
+    const mergedResolved = Object.assign({}, (submission && submission.retry_resolved) || {}, { [resolvedKey]: true });
+    const patchBody = { id: item.submissionId, retry_resolved: mergedResolved };
+    if(item.isMath && extraAnswer != null){
+      const mergedAnswers = Object.assign({}, (submission && submission.retry_answers) || {}, { [item.num]: extraAnswer });
+      patchBody.retry_answers = mergedAnswers;
+    }
+    try{
+      await apiCall('/api/submissions', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patchBody) });
+    }catch(e){ /* ignore */ }
+  }
+
+  document.querySelectorAll('[data-retry-page-dismiss]').forEach(el => {
+    el.onclick = async () => {
+      const key = el.getAttribute('data-retry-page-dismiss');
+      const item = unresolved.find(u => u.key === key);
+      if(!item) return;
+      await resolveItem(item, null);
+      renderRetryPage();
+    };
+  });
 
   document.querySelectorAll('[data-retry-page-check]').forEach(el => {
     el.onclick = async () => {
@@ -1150,23 +1201,14 @@ async function renderRetryPage(){
       retryPageState[key] = { grading:false, feedback:result, answer: typed };
 
       if(result.correct){
-        const submission = submissions.find(s => s.id === item.submissionId);
-        const resolvedKey = item.isQuiz ? item.quizKey : item.num;
-        const mergedResolved = Object.assign({}, (submission && submission.retry_resolved) || {}, { [resolvedKey]: true });
-        const patchBody = { id: item.submissionId, retry_resolved: mergedResolved };
-        if(item.isMath){
-          const mergedAnswers = Object.assign({}, (submission && submission.retry_answers) || {}, { [item.num]: typed });
-          patchBody.retry_answers = mergedAnswers;
-        }
-        try{
-          await apiCall('/api/submissions', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patchBody) });
-        }catch(e){ /* ignore */ }
+        await resolveItem(item, typed);
       }
 
       renderRetryPage();
     };
   });
 }
+
 
 // ================= 管理タブ: 分析 =================
 async function renderAnalysisPage(){
