@@ -1071,25 +1071,13 @@ function renderRetryItemBox(item){
   const st = retryPageState[item.key] || {};
   const grading = st.grading;
   const badge = item.occurrences > 1 ? `<span style="background:#fde2e2;color:#c0392b;font-size:11px;padding:2px 6px;border-radius:8px;margin-left:6px;">${item.occurrences}回目</span>` : '';
-
-  if(item.resolved){
-    const val = item.savedAnswer || '';
-    return `
-      <div class="retry-box resolved">
-        <div class="num">${escapeHtml(item.task)} ${escapeHtml(item.num)}${badge} ✅ 直せました</div>
-        <div class="explain">${escapeHtml(item.explain)}</div>
-        <div class="retry-problem">${escapeHtml(item.retryProblem)}</div>
-        <input type="text" class="quiz-input correct" value="${escapeHtml(val)}" disabled>
-        <div class="quiz-feedback correct">正解です！</div>
-      </div>
-    `;
-  }
+  const doneLabel = item.resolved ? ' ✅ 直せたことがあります' : '';
 
   const feedback = st.feedback;
-  const val = st.answer != null ? st.answer : item.savedAnswer;
+  const val = st.answer != null ? st.answer : '';
   return `
     <div class="retry-box">
-      <div class="num">${escapeHtml(item.task)} ${escapeHtml(item.num)}${badge}</div>
+      <div class="num">${escapeHtml(item.task)} ${escapeHtml(item.num)}${badge}${doneLabel}</div>
       <div class="explain">${escapeHtml(item.explain)}</div>
       <div class="retry-problem">${escapeHtml(item.retryProblem)}</div>
       <input type="text" class="quiz-input ${feedback ? (feedback.correct ? 'correct' : 'wrong') : ''}" id="retry-page-input-${item.key}" value="${escapeHtml(val)}" placeholder="ここに答えを書いてね" ${grading ? 'disabled' : ''}>
@@ -1184,24 +1172,17 @@ async function renderRetryPage(){
   }).join('');
   html += `</div>`;
 
-  const subjectItems = bySubjectAll[retryActiveSubject] || [];
-  const unresolvedItems = subjectItems.filter(it => !it.resolved);
-  const resolvedItems = subjectItems.filter(it => it.resolved);
+  // 未解決を優先して並べつつ、その科目の全問題を表示(解決済みも何度でも解ける)
+  const subjectItems = (bySubjectAll[retryActiveSubject] || []).slice().sort((a, b) => {
+    if(a.resolved !== b.resolved) return a.resolved ? 1 : -1;
+    return 0;
+  });
 
-  if(unresolvedItems.length){
-    html += `<button class="action-btn secondary" data-retry-print="${escapeHtml(retryActiveSubject)}" style="margin-bottom:12px;">📄 ${escapeHtml(retryActiveSubject)}のPDFで保存(${unresolvedItems.length}問)</button>`;
+  if(subjectItems.length){
+    html += `<button class="action-btn secondary" data-retry-print="${escapeHtml(retryActiveSubject)}" style="margin-bottom:12px;">📄 ${escapeHtml(retryActiveSubject)}のPDFで保存(${subjectItems.length}問)</button>`;
   }
 
-  if(!unresolvedItems.length){
-    html += `<div class="warn-banner" style="background:var(--green-soft);color:var(--green);">🎉 この科目の未解決の間違いはありません</div>`;
-  } else {
-    html += unresolvedItems.map(renderRetryItemBox).join('');
-  }
-
-  if(resolvedItems.length){
-    html += `<div class="sub-note" style="margin:16px 0 8px;font-weight:600;">${escapeHtml(retryActiveSubject)}の解決済み ${resolvedItems.length}件</div>`;
-    html += resolvedItems.map(renderRetryItemBox).join('');
-  }
+  html += subjectItems.map(renderRetryItemBox).join('');
 
   listEl.innerHTML = html;
 
@@ -1215,14 +1196,14 @@ async function renderRetryPage(){
   const printBtn = listEl.querySelector('[data-retry-print]');
   if(printBtn){
     printBtn.onclick = () => {
-      printSubjectSheet(retryActiveSubject, unresolvedItems);
+      printSubjectSheet(retryActiveSubject, subjectItems);
     };
   }
 
   document.querySelectorAll('[data-retry-page-check]').forEach(el => {
     el.onclick = async () => {
       const key = el.getAttribute('data-retry-page-check');
-      const item = unresolvedItems.find(u => u.key === key);
+      const item = subjectItems.find(u => u.key === key);
       if(!item) return;
       const inputEl = document.getElementById('retry-page-input-' + key);
       const typed = (inputEl ? inputEl.value : '').trim();
@@ -1250,7 +1231,7 @@ async function renderRetryPage(){
 
       retryPageState[key] = { grading:false, feedback:result, answer: typed };
 
-      if(result.correct){
+      if(result.correct && !item.resolved){
         const submission = submissions.find(s => s.id === item.submissionId);
         const resolvedKey = item.isQuiz ? item.quizKey : item.num;
         const mergedResolved = Object.assign({}, (submission && submission.retry_resolved) || {}, { [resolvedKey]: true });
@@ -1268,9 +1249,6 @@ async function renderRetryPage(){
     };
   });
 }
-
-
-
 
 
 // ================= 管理タブ: 分析 =================
