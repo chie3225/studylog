@@ -1082,7 +1082,10 @@ function renderRetryItemBox(item){
       <div class="retry-problem">${escapeHtml(item.retryProblem)}</div>
       <input type="text" class="quiz-input ${feedback ? (feedback.correct ? 'correct' : 'wrong') : ''}" id="retry-page-input-${item.key}" value="${escapeHtml(val)}" placeholder="ここに答えを書いてね" ${grading ? 'disabled' : ''}>
       ${feedback ? `<div class="quiz-feedback ${feedback.correct ? 'correct' : 'wrong'}">${escapeHtml(feedback.feedback)}</div>` : ''}
-      <button class="action-btn secondary" data-retry-page-check="${item.key}" ${grading ? 'disabled' : ''}>${grading ? '採点中…' : 'こたえ合わせ'}</button>
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <button class="action-btn secondary" style="flex:1;" data-retry-page-check="${item.key}" ${grading ? 'disabled' : ''}>${grading ? '採点中…' : 'こたえ合わせ'}</button>
+        <button class="action-btn secondary" style="flex:1;background:#f0f0f0;" data-retry-page-dismiss="${item.key}">✅ もう大丈夫</button>
+      </div>
     </div>
   `;
 }
@@ -1172,7 +1175,6 @@ async function renderRetryPage(){
   }).join('');
   html += `</div>`;
 
-  // 未解決を優先して並べつつ、その科目の全問題を表示(解決済みも何度でも解ける)
   const subjectItems = (bySubjectAll[retryActiveSubject] || []).slice().sort((a, b) => {
     if(a.resolved !== b.resolved) return a.resolved ? 1 : -1;
     return 0;
@@ -1182,7 +1184,11 @@ async function renderRetryPage(){
     html += `<button class="action-btn secondary" data-retry-print="${escapeHtml(retryActiveSubject)}" style="margin-bottom:12px;">📄 ${escapeHtml(retryActiveSubject)}のPDFで保存(${subjectItems.length}問)</button>`;
   }
 
-  html += subjectItems.map(renderRetryItemBox).join('');
+  if(!subjectItems.length){
+    html += `<div class="warn-banner" style="background:var(--green-soft);color:var(--green);">🎉 この科目の間違いはありません</div>`;
+  } else {
+    html += subjectItems.map(renderRetryItemBox).join('');
+  }
 
   listEl.innerHTML = html;
 
@@ -1199,6 +1205,30 @@ async function renderRetryPage(){
       printSubjectSheet(retryActiveSubject, subjectItems);
     };
   }
+
+  async function resolveItem(item, extraAnswer){
+    const submission = submissions.find(s => s.id === item.submissionId);
+    const resolvedKey = item.isQuiz ? item.quizKey : item.num;
+    const mergedResolved = Object.assign({}, (submission && submission.retry_resolved) || {}, { [resolvedKey]: true });
+    const patchBody = { id: item.submissionId, retry_resolved: mergedResolved };
+    if(item.isMath && extraAnswer != null){
+      const mergedAnswers = Object.assign({}, (submission && submission.retry_answers) || {}, { [item.num]: extraAnswer });
+      patchBody.retry_answers = mergedAnswers;
+    }
+    try{
+      await apiCall('/api/submissions', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patchBody) });
+    }catch(e){ /* ignore */ }
+  }
+
+  document.querySelectorAll('[data-retry-page-dismiss]').forEach(el => {
+    el.onclick = async () => {
+      const key = el.getAttribute('data-retry-page-dismiss');
+      const item = subjectItems.find(u => u.key === key);
+      if(!item) return;
+      await resolveItem(item, null);
+      renderRetryPage();
+    };
+  });
 
   document.querySelectorAll('[data-retry-page-check]').forEach(el => {
     el.onclick = async () => {
@@ -1232,24 +1262,13 @@ async function renderRetryPage(){
       retryPageState[key] = { grading:false, feedback:result, answer: typed };
 
       if(result.correct && !item.resolved){
-        const submission = submissions.find(s => s.id === item.submissionId);
-        const resolvedKey = item.isQuiz ? item.quizKey : item.num;
-        const mergedResolved = Object.assign({}, (submission && submission.retry_resolved) || {}, { [resolvedKey]: true });
-        const patchBody = { id: item.submissionId, retry_resolved: mergedResolved };
-        if(item.isMath){
-          const mergedAnswers = Object.assign({}, (submission && submission.retry_answers) || {}, { [item.num]: typed });
-          patchBody.retry_answers = mergedAnswers;
-        }
-        try{
-          await apiCall('/api/submissions', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patchBody) });
-        }catch(e){ /* ignore */ }
+        await resolveItem(item, typed);
       }
 
       renderRetryPage();
     };
   });
 }
-
 
 // ================= 管理タブ: 分析 =================
 async function renderAnalysisPage(){
