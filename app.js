@@ -32,7 +32,7 @@ const state = subjectsConfig.map((cfg) => {
   if (cfg.type === 'work-photo') {
     return { uploading:false, uploaded:false, marksDetected:false, marks:{}, explanations:{}, retryProblems:{}, retryResolved:{}, submissionId:null, refLink:'', errorMsg:null };
   }
-  return { uploading:false, uploaded:false, started:false, rawItems:[], queue:[], current:null, input:'', feedback:null, wrongItems:[], correctCounts:{}, done:false, errorMsg:null };
+  return { uploading:false, uploaded:false, started:false, rawItems:[], queue:[], current:null, input:'', feedback:null, wrongItems:[], correctCounts:{}, attemptLog:[], done:false, errorMsg:null };
 });
 
 let openIdx = null;
@@ -69,7 +69,7 @@ function attachImagePreviewHandlers(selector){
   });
 }
 
-// ---------- 問題と解答の一覧プレビュー ----------
+// ---------- 問題と解答の一覧プレビュー(生徒側画面用) ----------
 function openQAModal(title, items){
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;';
@@ -88,6 +88,49 @@ function openQAModal(title, items){
       <div data-close-modal style="font-size:20px;padding:4px 10px;cursor:pointer;color:#888;">✕</div>
     </div>
     <div>${rows || '<div class="empty-state">問題の記録がありません</div>'}</div>
+  `;
+  overlay.appendChild(box);
+  overlay.onclick = (e) => { if(e.target === overlay) overlay.remove(); };
+  box.querySelector('[data-close-modal]').onclick = () => overlay.remove();
+  document.body.appendChild(overlay);
+}
+
+// ---------- 実際のやり取りログ(親の管理画面用・NEW) ----------
+function openAttemptLogModal(title, attempts, fallbackItems){
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#fff;border-radius:14px;padding:16px;max-width:480px;width:100%;margin-top:36px;box-shadow:0 8px 30px rgba(0,0,0,0.2);';
+
+  let rows = '';
+  if(attempts && attempts.length){
+    rows = attempts.map((a, i) => `
+      <div style="padding:10px 0;border-bottom:1px solid #eee;">
+        <div style="font-size:12px;color:#888;">問${i+1}</div>
+        <div style="font-weight:600;margin:2px 0;">${escapeHtml(a.prompt)}</div>
+        <div style="color:${a.correct ? '#2a8a5a' : '#c0392b'};">
+          こたえた内容: ${escapeHtml(a.userAnswer || '(無回答)')} ${a.correct ? '⭕ 正解' : '❌ 不正解'}
+        </div>
+        ${a.correct ? '' : `<div style="color:#2a8a5a;font-size:13px;">正しい答え: ${escapeHtml(a.correctAnswer)}</div>`}
+      </div>
+    `).join('');
+  } else if(fallbackItems && fallbackItems.length){
+    rows = `<div class="sub-note" style="margin-bottom:8px;color:#aaa;">この回は詳しい解答記録がありません(問題と正解のみ表示)</div>` +
+      fallbackItems.map((it, i) => `
+        <div style="padding:10px 0;border-bottom:1px solid #eee;">
+          <div style="font-size:12px;color:#888;">問${i+1}</div>
+          <div style="font-weight:600;margin:2px 0;">${escapeHtml(it.prompt)}</div>
+          <div style="color:#2a8a5a;">→ ${escapeHtml(it.answer)}</div>
+        </div>
+      `).join('');
+  }
+
+  box.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div style="font-weight:700;">${escapeHtml(title)}</div>
+      <div data-close-modal style="font-size:20px;padding:4px 10px;cursor:pointer;color:#888;">✕</div>
+    </div>
+    <div>${rows || '<div class="empty-state">記録がありません</div>'}</div>
   `;
   overlay.appendChild(box);
   overlay.onclick = (e) => { if(e.target === overlay) overlay.remove(); };
@@ -209,6 +252,7 @@ async function initStudentView(){
       s.done = true;
       s.wrongItems = (existing.quiz_result && existing.quiz_result.wrongItems) || [];
       const restoredItems = (existing.quiz_result && existing.quiz_result.items) || [];
+      s.attemptLog = (existing.quiz_result && existing.quiz_result.attempts) || [];
       const promptKey = QUIZ_PROMPT_KEY[cfg.type];
       const answerKey = QUIZ_ANSWER_KEY[cfg.type];
       s.rawItems = restoredItems.map((it, i) => ({ [promptKey]: it.prompt, [answerKey]: it.answer, _id: i }));
@@ -482,7 +526,7 @@ function attachSubjectHandlers(){
       const s = state[idx];
       s.uploaded = false; s.started = false; s.done = false;
       s.rawItems = []; s.queue = []; s.current = null;
-      s.wrongItems = []; s.correctCounts = {}; s.input = ''; s.feedback = null;
+      s.wrongItems = []; s.correctCounts = {}; s.attemptLog = []; s.input = ''; s.feedback = null;
       renderAll();
     };
   });
@@ -512,6 +556,7 @@ function attachSubjectHandlers(){
       s.done = false;
       s.wrongItems = [];
       s.correctCounts = {};
+      s.attemptLog = [];
       s.input = ''; s.feedback = null;
       renderAll();
     };
@@ -539,7 +584,8 @@ function attachSubjectHandlers(){
       const cfg = subjectsConfig[idx];
       const promptKey = QUIZ_PROMPT_KEY[cfg.type];
       const inputEl = document.getElementById('quiz-input-' + idx);
-      const typed = (inputEl ? inputEl.value : '').trim().toLowerCase();
+      const rawTyped = (inputEl ? inputEl.value : '').trim();
+      const typed = rawTyped.toLowerCase();
       const correctAnswer = String(s.current[answerKey]).trim().toLowerCase();
       const normalize = (str) => str.replace(/[.\u2026]+$/g, '').replace(/\s+/g, ' ').trim();
       const isCorrect = normalize(typed) === normalize(correctAnswer);
@@ -547,6 +593,14 @@ function attachSubjectHandlers(){
       const requiredPasses = cfg.type === 'vocab-quiz' ? 3 : 1;
       s.correctCounts = s.correctCounts || {};
       const itemId = s.current._id;
+
+      s.attemptLog = s.attemptLog || [];
+      s.attemptLog.push({
+        prompt: s.current[promptKey],
+        correctAnswer: s.current[answerKey],
+        userAnswer: rawTyped,
+        correct: isCorrect
+      });
 
       if(!isCorrect){
         s.wrongItems.push({ prompt: s.current[promptKey], answer: s.current[answerKey] });
@@ -644,6 +698,7 @@ async function handleQuizUpload(idx){
 
   try{
     const { base64, dataUrl } = await resizeImage(file, 800, 0.5);
+    s.photoDataUrl = dataUrl;
 
     const result = await apiCall('/api/generate-quiz', {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -652,6 +707,7 @@ async function handleQuizUpload(idx){
 
     s.rawItems = result.items.map((it, i) => ({ ...it, _id: i }));
     s.correctCounts = {};
+    s.attemptLog = [];
     s.uploaded = true;
   }catch(err){
     s.errorMsg = err.message;
@@ -676,7 +732,8 @@ async function saveQuizSubmission(idx){
         type: cfg.type, photo: s.photoDataUrl || '',
         quiz_result: {
           total: s.rawItems.length, wrongCount: s.wrongItems.length, wrongItems: s.wrongItems,
-          items: s.rawItems.map(it => ({ prompt: it[promptKey], answer: it[answerKey] }))
+          items: s.rawItems.map(it => ({ prompt: it[promptKey], answer: it[answerKey] })),
+          attempts: s.attemptLog || []
         }
       })
     });
@@ -838,20 +895,23 @@ function renderDayDetail(){
         const correctCount = s.quiz_result.total - (s.quiz_result.wrongCount || 0);
         sub2 = `${correctCount}/${s.quiz_result.total} 正解`;
       }
-      const hasQaItems = s.quiz_result && Array.isArray(s.quiz_result.items) && s.quiz_result.items.length;
-      const qaBtn = hasQaItems
-        ? `<button class="action-btn secondary" data-day-qa="${s.id}" style="margin-top:6px;font-size:12px;padding:8px 10px;">📋 問題と解答を見る</button>`
+      const isQuizType = s.quiz_result && Array.isArray(s.quiz_result.items) && s.quiz_result.items.length > 0;
+      const thumbAttr = isQuizType ? `data-day-log="${s.id}"` : '';
+      const badge = isQuizType
+        ? '<div class="quiz-log-badge" style="position:absolute;bottom:2px;right:2px;background:rgba(0,0,0,0.65);color:#fff;font-size:10px;padding:2px 5px;border-radius:6px;pointer-events:none;">📋 記録</div>'
         : '';
       return `
         <div class="sub-block">
           <div class="sub-block-head">
-            <img class="sub-thumb" src="${s.photo || ''}" alt="">
+            <div style="position:relative;display:inline-block;">
+              <img class="sub-thumb ${isQuizType ? 'quiz-log-thumb' : ''}" src="${s.photo || ''}" alt="" ${thumbAttr}>
+              ${badge}
+            </div>
             <div>
               <span class="sub-subject-tag">${escapeHtml(s.subject)}</span>
               <div class="sub-time">${escapeHtml(s.task)} ・ ${sub2}</div>
             </div>
           </div>
-          ${qaBtn}
         </div>
       `;
     }).join('');
@@ -891,16 +951,21 @@ function renderDayDetail(){
     };
   });
 
-  document.querySelectorAll('[data-day-qa]').forEach(el => {
-    el.onclick = () => {
-      const id = el.getAttribute('data-day-qa');
+  document.querySelectorAll('[data-day-log]').forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      const id = el.getAttribute('data-day-log');
       const sub = calendarCache.submissions.find(x => String(x.id) === String(id));
       if(!sub) return;
-      openQAModal(`${sub.subject} ${sub.task}`, sub.quiz_result.items || []);
+      openAttemptLogModal(
+        `${sub.subject} ${sub.task}`,
+        (sub.quiz_result && sub.quiz_result.attempts) || [],
+        (sub.quiz_result && sub.quiz_result.items) || []
+      );
     };
   });
 
-  attachImagePreviewHandlers('.sub-thumb');
+  attachImagePreviewHandlers('.sub-thumb:not(.quiz-log-thumb)');
 }
 
 // ================= 管理タブ: テスト前やり直し =================
