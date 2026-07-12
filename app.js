@@ -99,7 +99,7 @@ function openQAModal(title, items){
 
 function printAttemptSheet(title, attempts, fallbackItems){
   const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:1000px;height:1400px;border:0;';
   document.body.appendChild(iframe);
   const doc = iframe.contentWindow.document;
 
@@ -127,11 +127,18 @@ function printAttemptSheet(title, attempts, fallbackItems){
   doc.write(`
     <html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
     <style>
+      @page { size: A4; margin: 10mm; }
       * { box-sizing: border-box; }
-      body { font-family: sans-serif; padding: 12px; color:#222; }
-      h2 { column-span: all; margin: 0 0 10px; font-size:15px; }
-      .cols { column-count: 3; column-gap: 14px; }
-      .item { break-inside: avoid; padding: 3px 0 5px; border-bottom: 1px solid #ddd; font-size: 10px; line-height:1.35; }
+      html, body { width: 100%; margin:0; padding:0; }
+      body { font-family: sans-serif; padding: 10px; color:#222; }
+      h2 { margin: 0 0 10px; font-size:15px; }
+      .cols {
+        column-count: 3;
+        column-gap: 16px;
+        column-fill: auto;
+        width: 100%;
+      }
+      .item { break-inside: avoid; -webkit-column-break-inside: avoid; padding: 3px 0 5px; border-bottom: 1px solid #ddd; font-size: 10px; line-height:1.35; }
       .num { color:#999; font-size:8.5px; }
       .prompt { font-weight:700; }
       .ok { color:#2a8a5a; }
@@ -145,9 +152,11 @@ function printAttemptSheet(title, attempts, fallbackItems){
     </body></html>
   `);
   doc.close();
-  iframe.contentWindow.focus();
-  iframe.contentWindow.print();
-  setTimeout(() => { document.body.removeChild(iframe); }, 3000);
+  setTimeout(() => {
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+    setTimeout(() => { document.body.removeChild(iframe); }, 3000);
+  }, 200);
 }
 
 function openAttemptLogModal(title, attempts, fallbackItems){
@@ -1084,7 +1093,7 @@ function buildDedupeKey(subject, task, text){
 
 function printSubjectSheet(subject, items){
   const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:1000px;height:1400px;border:0;';
   document.body.appendChild(iframe);
   const doc = iframe.contentWindow.document;
   const rows = items.map((it, i) => `
@@ -1097,16 +1106,20 @@ function printSubjectSheet(subject, items){
   `).join('');
   doc.open();
   doc.write(`
-    <html><head><meta charset="utf-8"><title>${escapeHtml(subject)} やり直しシート</title></head>
+    <html><head><meta charset="utf-8"><title>${escapeHtml(subject)} やり直しシート</title>
+    <style>@page { size: A4; margin: 10mm; } html, body { width:100%; margin:0; }</style>
+    </head>
     <body style="font-family:sans-serif;padding:16px;color:#222;">
       <h2 style="margin-bottom:16px;">${escapeHtml(subject)} やり直しシート(${items.length}問)</h2>
       ${rows}
     </body></html>
   `);
   doc.close();
-  iframe.contentWindow.focus();
-  iframe.contentWindow.print();
-  setTimeout(() => { document.body.removeChild(iframe); }, 3000);
+  setTimeout(() => {
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+    setTimeout(() => { document.body.removeChild(iframe); }, 3000);
+  }, 200);
 }
 
 function renderRetryItemBox(item){
