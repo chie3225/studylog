@@ -44,7 +44,7 @@ module.exports = async (req, res) => {
   const contextText = `教科: ${subject || '不明'} / 課題: ${task || '不明'}`;
 
   try {
-    const rawText = await callClaude({ system, imageBase64: image_base64, text: contextText, maxTokens: 4000 });
+    const rawText = await callClaude({ system, imageBase64: image_base64, text: contextText, maxTokens: 8000 });
     const parsed = extractJson(rawText);
     if (typeof parsed.marksDetected !== 'boolean' || !Array.isArray(parsed.items)) {
       throw new Error('応答の形式が想定と異なります');
