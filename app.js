@@ -1090,6 +1090,48 @@ function renderRetryItemBox(item){
   `;
 }
 
+function openBulkDismissConfirm(subject, unresolvedItems, onSaveAndDismiss, onDismissOnly){
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#fff;border-radius:14px;padding:20px;max-width:420px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,0.2);';
+  box.innerHTML = `
+    <div style="font-weight:700;font-size:16px;margin-bottom:8px;">${escapeHtml(subject)}の未解決 ${unresolvedItems.length}件を、本当に全部消していいですか？</div>
+    <div style="color:#888;font-size:13px;margin-bottom:18px;">一度消すと元には戻せません。</div>
+    <button data-bulk-save-dismiss class="action-btn secondary" style="margin-bottom:8px;width:100%;">📄 最後にPDFで保存してから消す</button>
+    <button data-bulk-dismiss class="action-btn secondary" style="margin-bottom:8px;width:100%;">いいよ！(そのまま消す)</button>
+    <button data-bulk-cancel class="action-btn secondary" style="width:100%;background:#f0f0f0;">やっぱ消しちゃダメ</button>
+  `;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  box.querySelector('[data-bulk-save-dismiss]').onclick = () => { overlay.remove(); onSaveAndDismiss(); };
+  box.querySelector('[data-bulk-dismiss]').onclick = () => { overlay.remove(); onDismissOnly(); };
+  box.querySelector('[data-bulk-cancel]').onclick = () => overlay.remove();
+  overlay.onclick = (e) => { if(e.target === overlay) overlay.remove(); };
+}
+
+async function bulkDismissItems(items, submissions){
+  // submissionIdごとにまとめて更新する
+  const bySubmission = {};
+  items.forEach(it => { (bySubmission[it.submissionId] = bySubmission[it.submissionId] || []).push(it); });
+
+  for(const submissionId of Object.keys(bySubmission)){
+    const submission = submissions.find(s => String(s.id) === String(submissionId));
+    const mergedResolved = Object.assign({}, (submission && submission.retry_resolved) || {});
+    bySubmission[submissionId].forEach(it => {
+      const key = it.isQuiz ? it.quizKey : it.num;
+      mergedResolved[key] = true;
+    });
+    try{
+      await apiCall('/api/submissions', {
+        method:'PATCH', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ id: Number(submissionId) || submissionId, retry_resolved: mergedResolved })
+      });
+    }catch(e){ /* ignore */ }
+  }
+}
+
 async function renderRetryPage(){
   const listEl = document.getElementById('retry-list');
   listEl.innerHTML = '<div class="loading-state">読み込み中…</div>';
@@ -1179,9 +1221,13 @@ async function renderRetryPage(){
     if(a.resolved !== b.resolved) return a.resolved ? 1 : -1;
     return 0;
   });
+  const unresolvedInSubject = subjectItems.filter(it => !it.resolved);
 
   if(subjectItems.length){
-    html += `<button class="action-btn secondary" data-retry-print="${escapeHtml(retryActiveSubject)}" style="margin-bottom:12px;">📄 ${escapeHtml(retryActiveSubject)}のPDFで保存(${subjectItems.length}問)</button>`;
+    html += `<button class="action-btn secondary" data-retry-print="${escapeHtml(retryActiveSubject)}" style="margin-bottom:8px;">📄 ${escapeHtml(retryActiveSubject)}のPDFで保存(${subjectItems.length}問)</button>`;
+  }
+  if(unresolvedInSubject.length){
+    html += `<button class="action-btn secondary" data-retry-bulk-dismiss style="margin-bottom:12px;background:#f0f0f0;">🗑️ ${escapeHtml(retryActiveSubject)}を全部もう大丈夫！</button>`;
   }
 
   if(!subjectItems.length){
@@ -1203,6 +1249,27 @@ async function renderRetryPage(){
   if(printBtn){
     printBtn.onclick = () => {
       printSubjectSheet(retryActiveSubject, subjectItems);
+    };
+  }
+
+  const bulkBtn = listEl.querySelector('[data-retry-bulk-dismiss]');
+  if(bulkBtn){
+    bulkBtn.onclick = () => {
+      openBulkDismissConfirm(
+        retryActiveSubject,
+        unresolvedInSubject,
+        async () => {
+          printSubjectSheet(retryActiveSubject, unresolvedInSubject);
+          setTimeout(async () => {
+            await bulkDismissItems(unresolvedInSubject, submissions);
+            renderRetryPage();
+          }, 1200);
+        },
+        async () => {
+          await bulkDismissItems(unresolvedInSubject, submissions);
+          renderRetryPage();
+        }
+      );
     };
   }
 
@@ -1269,6 +1336,7 @@ async function renderRetryPage(){
     };
   });
 }
+
 
 // ================= 管理タブ: 分析 =================
 async function renderAnalysisPage(){
