@@ -97,6 +97,59 @@ function openQAModal(title, items){
   document.body.appendChild(overlay);
 }
 
+function printAttemptSheet(title, attempts, fallbackItems){
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+  document.body.appendChild(iframe);
+  const doc = iframe.contentWindow.document;
+
+  let rows = '';
+  if(attempts && attempts.length){
+    rows = attempts.map((a, i) => `
+      <div class="item">
+        <div class="num">問${i+1}</div>
+        <div class="prompt">${escapeHtml(a.prompt)}</div>
+        <div class="${a.correct ? 'ok' : 'ng'}">答え: ${escapeHtml(a.userAnswer || '(無回答)')} ${a.correct ? '○' : '×'}</div>
+        ${a.correct ? '' : `<div class="correct">正解: ${escapeHtml(a.correctAnswer)}</div>`}
+      </div>
+    `).join('');
+  } else if(fallbackItems && fallbackItems.length){
+    rows = fallbackItems.map((it, i) => `
+      <div class="item">
+        <div class="num">問${i+1}</div>
+        <div class="prompt">${escapeHtml(it.prompt)}</div>
+        <div class="ok">→ ${escapeHtml(it.answer)}</div>
+      </div>
+    `).join('');
+  }
+
+  doc.open();
+  doc.write(`
+    <html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: sans-serif; padding: 12px; color:#222; }
+      h2 { column-span: all; margin: 0 0 10px; font-size:15px; }
+      .cols { column-count: 3; column-gap: 14px; }
+      .item { break-inside: avoid; padding: 3px 0 5px; border-bottom: 1px solid #ddd; font-size: 10px; line-height:1.35; }
+      .num { color:#999; font-size:8.5px; }
+      .prompt { font-weight:700; }
+      .ok { color:#2a8a5a; }
+      .ng { color:#c0392b; }
+      .correct { color:#2a8a5a; font-size:9px; }
+    </style>
+    </head>
+    <body>
+      <h2>${escapeHtml(title)}（${(attempts && attempts.length) || (fallbackItems && fallbackItems.length) || 0}問）</h2>
+      <div class="cols">${rows || '<div>記録がありません</div>'}</div>
+    </body></html>
+  `);
+  doc.close();
+  iframe.contentWindow.focus();
+  iframe.contentWindow.print();
+  setTimeout(() => { document.body.removeChild(iframe); }, 3000);
+}
+
 function openAttemptLogModal(title, attempts, fallbackItems){
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;';
@@ -131,11 +184,13 @@ function openAttemptLogModal(title, attempts, fallbackItems){
       <div style="font-weight:700;">${escapeHtml(title)}</div>
       <div data-close-modal style="font-size:20px;padding:4px 10px;cursor:pointer;color:#888;">✕</div>
     </div>
+    <button data-print-attempts class="action-btn secondary" style="margin-bottom:10px;">📄 PDFで保存(提出用)</button>
     <div>${rows || '<div class="empty-state">記録がありません</div>'}</div>
   `;
   overlay.appendChild(box);
   overlay.onclick = (e) => { if(e.target === overlay) overlay.remove(); };
   box.querySelector('[data-close-modal]').onclick = () => overlay.remove();
+  box.querySelector('[data-print-attempts]').onclick = () => printAttemptSheet(title, attempts, fallbackItems);
   document.body.appendChild(overlay);
 }
 
