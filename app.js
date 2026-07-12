@@ -39,7 +39,6 @@ const state = subjectsConfig.map((cfg) => {
 let openIdx = null;
 let todayPlanKeys = new Set();
 
-// ---------- 共通ユーティリティ ----------
 function todayISO(d = new Date()){
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
@@ -54,7 +53,6 @@ function normalizeAnswerStr(str){
   return String(str || '').toLowerCase().replace(/[.\u2026]+$/g, '').replace(/\s+/g, ' ').trim();
 }
 
-// ---------- 画像プレビュー(ライトボックス) ----------
 function openImageLightbox(src){
   if(!src) return;
   const overlay = document.createElement('div');
@@ -74,7 +72,6 @@ function attachImagePreviewHandlers(selector){
   });
 }
 
-// ---------- 問題と解答の一覧プレビュー(生徒側画面用) ----------
 function openQAModal(title, items){
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;';
@@ -100,7 +97,6 @@ function openQAModal(title, items){
   document.body.appendChild(overlay);
 }
 
-// ---------- 実際のやり取りログ(親の管理画面用) ----------
 function openAttemptLogModal(title, attempts, fallbackItems){
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;';
@@ -199,7 +195,6 @@ async function gradeMathRetry(subject, task, problem, modelAnswer, studentAnswer
 document.getElementById('today-label').textContent =
   new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric',weekday:'short'});
 
-// ---------- Tabs ----------
 document.getElementById('tab-student').onclick = () => switchMode('student');
 document.getElementById('tab-parent').onclick = () => switchMode('parent');
 function switchMode(mode){
@@ -227,7 +222,6 @@ function switchParentSubtab(sub){
   if(sub==='analysis') renderAnalysisPage();
 }
 
-// ---------- きょうの課題: 初期化 ----------
 async function initStudentView(){
   const today = todayISO();
 
@@ -331,7 +325,6 @@ function renderSubjectRow(cfg, idx){
   `;
 }
 
-// ---------- 写真提出+自己丸つけ検出+AI解説(work-photo) ----------
 function renderWorkPhotoBody(cfg, idx){
   const s = state[idx];
   const refHtml = cfg.hasVideoLink ? renderVideoLinkField(idx, s.refLink) : '';
@@ -412,7 +405,6 @@ function renderVideoLinkField(idx, savedLink){
   `;
 }
 
-// ---------- タイピングクイズ(漢字の読み/英単語/英語予習 共通) ----------
 function renderQuizBody(cfg, idx){
   const s = state[idx];
   const promptKey = QUIZ_PROMPT_KEY[cfg.type];
@@ -473,7 +465,6 @@ function renderQuizBody(cfg, idx){
   `;
 }
 
-// ---------- きょうの課題: イベント処理 ----------
 function attachSubjectHandlers(){
   document.querySelectorAll('[data-toggle]').forEach(el => {
     el.onclick = () => {
@@ -805,7 +796,6 @@ async function saveQuizSubmission(idx){
 
 initStudentView();
 
-// ================= 管理タブ: カレンダー =================
 let calYear, calMonth;
 {
   const now = new Date();
@@ -1030,8 +1020,7 @@ function renderDayDetail(){
   attachImagePreviewHandlers('.sub-thumb:not(.quiz-log-thumb)');
 }
 
-// ================= 管理タブ: テスト前やり直し =================
-let retryPageState = {}; // key -> { grading:false, feedback:null, answer:'' }
+let retryPageState = {};
 let retryActiveSubject = null;
 
 function buildDedupeKey(subject, task, text){
@@ -1090,13 +1079,13 @@ function renderRetryItemBox(item){
   `;
 }
 
-function openBulkDismissConfirm(subject, unresolvedItems, onSaveAndDismiss, onDismissOnly){
+function openBulkDismissConfirm(subject, items, onSaveAndDismiss, onDismissOnly){
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
   const box = document.createElement('div');
   box.style.cssText = 'background:#fff;border-radius:14px;padding:20px;max-width:420px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,0.2);';
   box.innerHTML = `
-    <div style="font-weight:700;font-size:16px;margin-bottom:8px;">${escapeHtml(subject)}の未解決 ${unresolvedItems.length}件を、本当に全部消していいですか？</div>
+    <div style="font-weight:700;font-size:16px;margin-bottom:8px;">${escapeHtml(subject)}の ${items.length}件を、本当に全部消していいですか？</div>
     <div style="color:#888;font-size:13px;margin-bottom:18px;">一度消すと元には戻せません。</div>
     <button data-bulk-save-dismiss class="action-btn secondary" style="margin-bottom:8px;width:100%;">📄 最後にPDFで保存してから消す</button>
     <button data-bulk-dismiss class="action-btn secondary" style="margin-bottom:8px;width:100%;">いいよ！(そのまま消す)</button>
@@ -1112,7 +1101,6 @@ function openBulkDismissConfirm(subject, unresolvedItems, onSaveAndDismiss, onDi
 }
 
 async function bulkDismissItems(items, submissions){
-  // submissionIdごとにまとめて更新する
   const bySubmission = {};
   items.forEach(it => { (bySubmission[it.submissionId] = bySubmission[it.submissionId] || []).push(it); });
 
@@ -1221,12 +1209,9 @@ async function renderRetryPage(){
     if(a.resolved !== b.resolved) return a.resolved ? 1 : -1;
     return 0;
   });
-  const unresolvedInSubject = subjectItems.filter(it => !it.resolved);
 
   if(subjectItems.length){
     html += `<button class="action-btn secondary" data-retry-print="${escapeHtml(retryActiveSubject)}" style="margin-bottom:8px;">📄 ${escapeHtml(retryActiveSubject)}のPDFで保存(${subjectItems.length}問)</button>`;
-  }
-  if(unresolvedInSubject.length){
     html += `<button class="action-btn secondary" data-retry-bulk-dismiss style="margin-bottom:12px;background:#f0f0f0;">🗑️ ${escapeHtml(retryActiveSubject)}を全部もう大丈夫！</button>`;
   }
 
@@ -1257,16 +1242,16 @@ async function renderRetryPage(){
     bulkBtn.onclick = () => {
       openBulkDismissConfirm(
         retryActiveSubject,
-        unresolvedInSubject,
+        subjectItems,
         async () => {
-          printSubjectSheet(retryActiveSubject, unresolvedInSubject);
+          printSubjectSheet(retryActiveSubject, subjectItems);
           setTimeout(async () => {
-            await bulkDismissItems(unresolvedInSubject, submissions);
+            await bulkDismissItems(subjectItems, submissions);
             renderRetryPage();
           }, 1200);
         },
         async () => {
-          await bulkDismissItems(unresolvedInSubject, submissions);
+          await bulkDismissItems(subjectItems, submissions);
           renderRetryPage();
         }
       );
@@ -1337,8 +1322,6 @@ async function renderRetryPage(){
   });
 }
 
-
-// ================= 管理タブ: 分析 =================
 async function renderAnalysisPage(){
   const listEl = document.getElementById('subject-analysis-list');
   listEl.innerHTML = '<div class="loading-state">分析中…(データが多いと少し時間がかかります)</div>';
