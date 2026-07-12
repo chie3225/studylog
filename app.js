@@ -1049,11 +1049,9 @@ function printSubjectSheet(subject, items){
     </body></html>
   `);
   doc.close();
-  setTimeout(() => {
-    iframe.contentWindow.focus();
-    iframe.contentWindow.print();
-    setTimeout(() => { document.body.removeChild(iframe); }, 1000);
-  }, 300);
+  iframe.contentWindow.focus();
+  iframe.contentWindow.print();
+  setTimeout(() => { document.body.removeChild(iframe); }, 3000);
 }
 
 function renderRetryItemBox(item){
@@ -1211,8 +1209,8 @@ async function renderRetryPage(){
   });
 
   if(subjectItems.length){
-    html += `<button class="action-btn secondary" data-retry-print="${escapeHtml(retryActiveSubject)}" style="margin-bottom:8px;">📄 ${escapeHtml(retryActiveSubject)}のPDFで保存(${subjectItems.length}問)</button>`;
-    html += `<button class="action-btn secondary" data-retry-bulk-dismiss style="margin-bottom:12px;background:#f0f0f0;">🗑️ ${escapeHtml(retryActiveSubject)}を全部もう大丈夫！</button>`;
+    html += `<button class="action-btn secondary" data-retry-print="${escapeHtml(retryActiveSubject)}" style="margin-bottom:8px;">📄 PDFで保存(${subjectItems.length}問)</button>`;
+    html += `<button class="action-btn secondary" data-retry-bulk-dismiss style="margin-bottom:12px;background:#f0f0f0;">🗑️ 全部もう大丈夫！</button>`;
   }
 
   if(!subjectItems.length){
