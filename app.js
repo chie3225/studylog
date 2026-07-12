@@ -1,8 +1,5 @@
 // app.js
 
-// ---------- 教科設定 ----------
-// daily: true の教科は毎日固定表示。falseのものは、その日の同期済み予定(plans)に
-// 「教科+課題名」が一致するものがある時だけ表示される。
 const subjectsConfig = [
   { subject:'国語', task:'漢字ノート', type:'kanji-quiz', daily:true },
   { subject:'数学', task:'解きまくり', type:'work-photo', daily:true },
@@ -30,13 +27,17 @@ const QUIZ_DONE_MESSAGE = {
 
 const state = subjectsConfig.map((cfg) => {
   if (cfg.type === 'work-photo') {
-    return { uploading:false, uploaded:false, marksDetected:false, marks:{}, explanations:{}, retryProblems:{}, retryResolved:{}, submissionId:null, refLink:'', errorMsg:null };
+    return {
+      uploading:false, uploaded:false, marksDetected:false, marks:{}, explanations:{},
+      retryProblems:{}, retryUserAnswers:{}, retryFeedback:{}, retryGrading:{}, retryResolved:{},
+      submissionId:null, refLink:'', errorMsg:null
+    };
   }
   return { uploading:false, uploaded:false, started:false, rawItems:[], queue:[], current:null, input:'', feedback:null, wrongItems:[], correctCounts:{}, attemptLog:[], done:false, errorMsg:null };
 });
 
 let openIdx = null;
-let todayPlanKeys = new Set(); // "subject|task" 形式
+let todayPlanKeys = new Set();
 
 // ---------- 共通ユーティリティ ----------
 function todayISO(d = new Date()){
@@ -47,6 +48,10 @@ function escapeHtml(str){
   const div = document.createElement('div');
   div.textContent = str == null ? '' : String(str);
   return div.innerHTML;
+}
+
+function normalizeAnswerStr(str){
+  return String(str || '').toLowerCase().replace(/[.\u2026]+$/g, '').replace(/\s+/g, ' ').trim();
 }
 
 // ---------- 画像プレビュー(ライトボックス) ----------
@@ -95,7 +100,7 @@ function openQAModal(title, items){
   document.body.appendChild(overlay);
 }
 
-// ---------- 実際のやり取りログ(親の管理画面用・NEW) ----------
+// ---------- 実際のやり取りログ(親の管理画面用) ----------
 function openAttemptLogModal(title, attempts, fallbackItems){
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;';
@@ -184,6 +189,14 @@ async function apiCall(path, options){
   return data;
 }
 
+// AI採点(数学ややり直し用)
+async function gradeMathRetry(subject, task, problem, modelAnswer, studentAnswer){
+  return apiCall('/api/grade-retry', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ subject, task, problem, modelAnswer, studentAnswer })
+  });
+}
+
 document.getElementById('today-label').textContent =
   new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric',weekday:'short'});
 
@@ -219,7 +232,6 @@ function switchParentSubtab(sub){
 async function initStudentView(){
   const today = todayISO();
 
-  // 今日の同期済み予定を取得(理科テスト直し・社会単元テストの表示判定に使う)
   try{
     const data = await apiCall(`/api/plans?date=${today}`);
     todayPlanKeys = new Set((data.plans || []).map(p => p.subject + '|' + p.task));
@@ -227,7 +239,6 @@ async function initStudentView(){
     todayPlanKeys = new Set();
   }
 
-  // 今日すでに提出済みのものがあれば状態に反映(リロードしても消えないように)
   let todaysSubmissions = [];
   try{
     const data = await apiCall(`/api/submissions?date=${today}`);
@@ -244,7 +255,10 @@ async function initStudentView(){
       s.marks = existing.marks || {};
       s.explanations = existing.explanations || {};
       s.retryProblems = existing.retry_problems || {};
+      s.retryUserAnswers = existing.retry_answers || {};
       s.retryResolved = existing.retry_resolved || {};
+      s.retryFeedback = {};
+      s.retryGrading = {};
       s.submissionId = existing.id;
     } else {
       s.uploaded = true;
@@ -293,7 +307,6 @@ function getStatus(cfg, idx){
     if(unresolved.length) return {label:`🔁 やり直し中(残り${unresolved.length})`, cls:'progress'};
     return {label:'✅ 完了', cls:'done'};
   }
-  // quiz系(kanji-quiz / vocab-quiz / prep-quiz)
   if(!s.uploaded) return {label:'未着手', cls:'notstarted'};
   if(!s.started) return {label:'画像アップロード済み', cls:'warn'};
   if(!s.done) return {label:`🔁 進行中(残り${s.queue.length})`, cls:'progress'};
@@ -318,8 +331,6 @@ function renderSubjectRow(cfg, idx){
     </div>
   `;
 }
-
-
 
 // ---------- 写真提出+自己丸つけ検出+AI解説(work-photo) ----------
 function renderWorkPhotoBody(cfg, idx){
@@ -350,14 +361,29 @@ function renderWorkPhotoBody(cfg, idx){
 
   const retryHtml = wrongNums.map((num) => {
     const resolved = s.retryResolved[num];
+    if(resolved){
+      return `
+        <div class="retry-box resolved">
+          <div class="num">${escapeHtml(num)} ✅ 直せました</div>
+          <div class="explain">${escapeHtml(s.explanations[num] || '')}</div>
+        </div>
+      `;
+    }
+
+    const rp = s.retryProblems[num] || {};
+    const problemText = typeof rp === 'string' ? rp : (rp.problem || '');
+    const answerVal = s.retryUserAnswers[num] || '';
+    const feedback = s.retryFeedback[num];
+    const grading = s.retryGrading[num];
+
     return `
-      <div class="retry-box ${resolved ? 'resolved' : ''}">
-        <div class="num">${escapeHtml(num)} ${resolved ? '✅ 直せました' : '×がついていました'}</div>
+      <div class="retry-box">
+        <div class="num">${escapeHtml(num)} ×がついていました</div>
         <div class="explain">${escapeHtml(s.explanations[num] || '')}</div>
-        ${resolved ? '' : `
-          <div class="retry-problem">類似問題: ${escapeHtml(s.retryProblems[num] || '')}</div>
-          <button class="action-btn secondary" data-work-retry="${idx}|${num}">とけた！</button>
-        `}
+        <div class="retry-problem">類似問題: ${escapeHtml(problemText)}</div>
+        <input type="text" class="quiz-input ${feedback ? (feedback.correct ? 'correct' : 'wrong') : ''}" id="retry-input-${idx}-${num}" value="${escapeHtml(answerVal)}" placeholder="ここに答えを書いてね" ${grading ? 'disabled' : ''}>
+        ${feedback ? `<div class="quiz-feedback ${feedback.correct ? 'correct' : 'wrong'}">${escapeHtml(feedback.feedback)}</div>` : ''}
+        <button class="action-btn secondary" data-work-retry-check="${idx}|${num}" ${grading ? 'disabled' : ''}>${grading ? '採点中…' : 'こたえ合わせ'}</button>
       </div>
     `;
   }).join('');
@@ -466,25 +492,57 @@ function attachSubjectHandlers(){
       const idx = Number(el.getAttribute('data-work-reupload'));
       const s = state[idx];
       s.uploaded = false; s.marksDetected = false; s.marks = {}; s.explanations = {};
-      s.retryProblems = {}; s.retryResolved = {}; s.submissionId = null; s.photoDataUrl = null;
+      s.retryProblems = {}; s.retryUserAnswers = {}; s.retryFeedback = {}; s.retryGrading = {};
+      s.retryResolved = {}; s.submissionId = null; s.photoDataUrl = null;
       renderAll();
     };
   });
 
-  document.querySelectorAll('[data-work-retry]').forEach(el => {
+  document.querySelectorAll('[data-work-retry-check]').forEach(el => {
     el.onclick = async (e) => {
       e.stopPropagation();
-      const [idxStr, num] = el.getAttribute('data-work-retry').split('|');
+      const [idxStr, num] = el.getAttribute('data-work-retry-check').split('|');
       const idx = Number(idxStr);
       const s = state[idx];
-      s.retryResolved[num] = true;
+      const cfg = subjectsConfig[idx];
+      const inputEl = document.getElementById(`retry-input-${idx}-${num}`);
+      const typed = (inputEl ? inputEl.value : '').trim();
+
+      if(!typed){
+        s.retryFeedback[num] = { correct:false, feedback:'答えを入力してね' };
+        renderAll();
+        return;
+      }
+
+      s.retryUserAnswers[num] = typed;
+      s.retryGrading[num] = true;
+      s.retryFeedback[num] = null;
       renderAll();
+
+      const rp = s.retryProblems[num] || {};
+      const problemText = typeof rp === 'string' ? rp : (rp.problem || '');
+      const modelAnswer = typeof rp === 'string' ? '' : (rp.answer || '');
+
+      let result;
+      try{
+        result = await gradeMathRetry(cfg.subject, cfg.task, problemText, modelAnswer, typed);
+      }catch(err){
+        result = { correct:false, feedback:'採点でエラーが発生しました。もう一度試してみてね' };
+      }
+
+      s.retryGrading[num] = false;
+      s.retryFeedback[num] = result;
+      if(result.correct){
+        s.retryResolved[num] = true;
+      }
+      renderAll();
+
       if(s.submissionId){
         try{
+          const patchBody = { id: s.submissionId, retry_answers: s.retryUserAnswers };
+          if(result.correct) patchBody.retry_resolved = s.retryResolved;
           await apiCall('/api/submissions', {
-            method:'PATCH',
-            headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ id: s.submissionId, retry_resolved: s.retryResolved })
+            method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patchBody)
           });
         }catch(err){ /* 保存失敗しても表示上は進める */ }
       }
@@ -587,8 +645,7 @@ function attachSubjectHandlers(){
       const rawTyped = (inputEl ? inputEl.value : '').trim();
       const typed = rawTyped.toLowerCase();
       const correctAnswer = String(s.current[answerKey]).trim().toLowerCase();
-      const normalize = (str) => str.replace(/[.\u2026]+$/g, '').replace(/\s+/g, ' ').trim();
-      const isCorrect = normalize(typed) === normalize(correctAnswer);
+      const isCorrect = normalizeAnswerStr(typed) === normalizeAnswerStr(correctAnswer);
 
       const requiredPasses = cfg.type === 'vocab-quiz' ? 3 : 1;
       s.correctCounts = s.correctCounts || {};
@@ -657,11 +714,12 @@ async function handleWorkPhotoUpload(idx){
     s.uploaded = true;
     s.marksDetected = result.marksDetected;
     s.marks = {}; s.explanations = {}; s.retryProblems = {};
+    s.retryUserAnswers = {}; s.retryFeedback = {}; s.retryGrading = {};
     (result.items || []).forEach(item => {
       s.marks[item.number] = item.mark;
       if(item.mark === '×' || item.mark === '✕'){
         s.explanations[item.number] = item.explain || '';
-        s.retryProblems[item.number] = item.retryProblem || '';
+        s.retryProblems[item.number] = { problem: item.retryProblem || '', answer: item.retryAnswer || '' };
       }
     });
     s.retryResolved = {};
@@ -673,7 +731,7 @@ async function handleWorkPhotoUpload(idx){
         body: JSON.stringify({
           date: todayISO(now), time: now.toISOString(), subject: cfg.subject, task: cfg.task,
           type:'work-photo', photo: dataUrl, marks: s.marks, explanations: s.explanations,
-          retry_problems: s.retryProblems, retry_resolved: {}
+          retry_problems: s.retryProblems, retry_answers: {}, retry_resolved: {}
         })
       });
       s.submissionId = saved.submission.id;
@@ -750,7 +808,7 @@ let calYear, calMonth;
   calMonth = now.getMonth();
 }
 let selectedDate = todayISO();
-let syncState = 'idle'; // idle | scanning | done
+let syncState = 'idle';
 let calendarCache = { submissions: [], plans: [], missedReasons: [] };
 
 document.getElementById('prev-month').onclick = () => changeMonth(-1);
@@ -773,7 +831,6 @@ function renderSyncArea(){
       renderSyncArea();
       try{
         const { base64 } = await resizeImage(file, 1400, 0.7);
-        const monthStr = `${calYear}-${String(calMonth+1).padStart(2,'0')}`;
         const result = await apiCall('/api/sync-schedule', {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({ image_base64: base64, year: calYear, month: calMonth+1 })
@@ -969,6 +1026,8 @@ function renderDayDetail(){
 }
 
 // ================= 管理タブ: テスト前やり直し =================
+let retryPageState = {}; // key -> { grading:false, feedback:null }
+
 async function renderRetryPage(){
   const listEl = document.getElementById('retry-list');
   listEl.innerHTML = '<div class="loading-state">読み込み中…</div>';
@@ -989,12 +1048,19 @@ async function renderRetryPage(){
   submissions.forEach(s => {
     const marks = s.marks || {};
     const retryResolved = s.retry_resolved || {};
+    const retryProblems = s.retry_problems || {};
+    const retryAnswers = s.retry_answers || {};
+
     Object.keys(marks).forEach(num => {
       if(marks[num] !== '×' && marks[num] !== '✕') return;
+      const rp = retryProblems[num] || {};
+      const problemText = typeof rp === 'string' ? rp : (rp.problem || '');
+      const modelAnswer = typeof rp === 'string' ? '' : (rp.answer || '');
       const item = {
-        submissionId: s.id, subject: s.subject, task: s.task, num,
+        key: `w-${s.id}-${num}`, submissionId: s.id, subject: s.subject, task: s.task, num,
         explain: (s.explanations || {})[num] || '',
-        retryProblem: (s.retry_problems || {})[num] || '',
+        retryProblem: problemText, modelAnswer, isMath: true,
+        savedAnswer: retryAnswers[num] || '',
       };
       if(retryResolved[num]) resolved.push(item); else unresolved.push(item);
     });
@@ -1003,9 +1069,9 @@ async function renderRetryPage(){
       s.quiz_result.wrongItems.forEach((w, i) => {
         const key = 'q' + i;
         const item = {
-          submissionId: s.id, subject: s.subject, task: s.task, num: '',
-          explain: `問題「${w.prompt}」の正解は「${w.answer}」`,
-          retryProblem: '', isQuiz: true, quizKey: key,
+          key: `z-${s.id}-${key}`, submissionId: s.id, subject: s.subject, task: s.task, num:'',
+          explain: `問題「${w.prompt}」`, retryProblem: w.prompt, modelAnswer: w.answer,
+          isQuiz: true, quizKey: key, savedAnswer: '',
         };
         if(retryResolved[key]) resolved.push(item); else unresolved.push(item);
       });
@@ -1020,14 +1086,22 @@ async function renderRetryPage(){
   let html = '';
   if(unresolved.length){
     html += `<div class="sub-note" style="margin-bottom:8px;font-weight:600;">未解決 ${unresolved.length}件</div>`;
-    html += unresolved.map((w, i) => `
-      <div class="retry-box">
-        <div class="num">${escapeHtml(w.subject)} ${escapeHtml(w.task)} ${escapeHtml(w.num)}</div>
-        <div class="explain">${escapeHtml(w.explain)}</div>
-        <div class="retry-problem">${escapeHtml(w.retryProblem)}</div>
-        <button class="action-btn secondary" data-retry-page-resolve="${i}">とけた！</button>
-      </div>
-    `).join('');
+    html += unresolved.map((item) => {
+      const st = retryPageState[item.key] || {};
+      const feedback = st.feedback;
+      const grading = st.grading;
+      const val = st.answer != null ? st.answer : item.savedAnswer;
+      return `
+        <div class="retry-box">
+          <div class="num">${escapeHtml(item.subject)} ${escapeHtml(item.task)} ${escapeHtml(item.num)}</div>
+          <div class="explain">${escapeHtml(item.explain)}</div>
+          <div class="retry-problem">${escapeHtml(item.retryProblem)}</div>
+          <input type="text" class="quiz-input ${feedback ? (feedback.correct ? 'correct' : 'wrong') : ''}" id="retry-page-input-${item.key}" value="${escapeHtml(val)}" placeholder="ここに答えを書いてね" ${grading ? 'disabled' : ''}>
+          ${feedback ? `<div class="quiz-feedback ${feedback.correct ? 'correct' : 'wrong'}">${escapeHtml(feedback.feedback)}</div>` : ''}
+          <button class="action-btn secondary" data-retry-page-check="${item.key}" ${grading ? 'disabled' : ''}>${grading ? '採点中…' : 'こたえ合わせ'}</button>
+        </div>
+      `;
+    }).join('');
   } else {
     html += `<div class="warn-banner" style="background:var(--green-soft);color:var(--green);">🎉 今のところ未解決の間違いはありません</div>`;
   }
@@ -1044,19 +1118,51 @@ async function renderRetryPage(){
 
   listEl.innerHTML = html;
 
-  document.querySelectorAll('[data-retry-page-resolve]').forEach(el => {
+  document.querySelectorAll('[data-retry-page-check]').forEach(el => {
     el.onclick = async () => {
-      const i = Number(el.getAttribute('data-retry-page-resolve'));
-      const item = unresolved[i];
-      const submission = submissions.find(s => s.id === item.submissionId);
-      const key = item.isQuiz ? item.quizKey : item.num;
-      const mergedResolved = Object.assign({}, (submission && submission.retry_resolved) || {}, { [key]: true });
+      const key = el.getAttribute('data-retry-page-check');
+      const item = unresolved.find(u => u.key === key);
+      if(!item) return;
+      const inputEl = document.getElementById('retry-page-input-' + key);
+      const typed = (inputEl ? inputEl.value : '').trim();
+
+      if(!typed){
+        retryPageState[key] = { grading:false, feedback:{ correct:false, feedback:'答えを入力してね' }, answer: typed };
+        renderRetryPage();
+        return;
+      }
+
+      retryPageState[key] = { grading:true, feedback:null, answer: typed };
+      renderRetryPage();
+
+      let result;
       try{
-        await apiCall('/api/submissions', {
-          method:'PATCH', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ id: item.submissionId, retry_resolved: mergedResolved })
-        });
-      }catch(e){ /* ignore */ }
+        if(item.isQuiz){
+          const correct = normalizeAnswerStr(typed) === normalizeAnswerStr(item.modelAnswer);
+          result = { correct, feedback: correct ? '正解！' : `正解は "${item.modelAnswer}"` };
+        } else {
+          result = await gradeMathRetry(item.subject, item.task, item.retryProblem, item.modelAnswer, typed);
+        }
+      }catch(err){
+        result = { correct:false, feedback:'採点でエラーが発生しました。もう一度試してみてね' };
+      }
+
+      retryPageState[key] = { grading:false, feedback:result, answer: typed };
+
+      if(result.correct){
+        const submission = submissions.find(s => s.id === item.submissionId);
+        const resolvedKey = item.isQuiz ? item.quizKey : item.num;
+        const mergedResolved = Object.assign({}, (submission && submission.retry_resolved) || {}, { [resolvedKey]: true });
+        const patchBody = { id: item.submissionId, retry_resolved: mergedResolved };
+        if(item.isMath){
+          const mergedAnswers = Object.assign({}, (submission && submission.retry_answers) || {}, { [item.num]: typed });
+          patchBody.retry_answers = mergedAnswers;
+        }
+        try{
+          await apiCall('/api/submissions', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patchBody) });
+        }catch(e){ /* ignore */ }
+      }
+
       renderRetryPage();
     };
   });
