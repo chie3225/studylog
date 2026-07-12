@@ -189,7 +189,6 @@ async function apiCall(path, options){
   return data;
 }
 
-// AI採点(数学ややり直し用)
 async function gradeMathRetry(subject, task, problem, modelAnswer, studentAnswer){
   return apiCall('/api/grade-retry', {
     method:'POST', headers:{'Content-Type':'application/json'},
@@ -359,6 +358,8 @@ function renderWorkPhotoBody(cfg, idx){
     return `${refHtml}<img class="photo-thumb" src="${s.photoDataUrl || ''}" alt=""><div class="warn-banner" style="background:var(--green-soft);color:var(--green);margin-top:10px;">🎉 全問○がついていました！この教科は完了です</div><button class="action-btn secondary" data-work-reupload="${idx}" style="margin-top:8px;">🖼️ もう一度アップロードする</button>`;
   }
 
+  const allResolved = wrongNums.every(num => s.retryResolved[num]);
+
   const retryHtml = wrongNums.map((num) => {
     const resolved = s.retryResolved[num];
     if(resolved){
@@ -380,7 +381,7 @@ function renderWorkPhotoBody(cfg, idx){
       <div class="retry-box">
         <div class="num">${escapeHtml(num)} ×がついていました</div>
         <div class="explain">${escapeHtml(s.explanations[num] || '')}</div>
-        <div class="retry-problem">類似問題: ${escapeHtml(problemText)}</div>
+        <div class="retry-problem">${escapeHtml(problemText)}</div>
         <input type="text" class="quiz-input ${feedback ? (feedback.correct ? 'correct' : 'wrong') : ''}" id="retry-input-${idx}-${num}" value="${escapeHtml(answerVal)}" placeholder="ここに答えを書いてね" ${grading ? 'disabled' : ''}>
         ${feedback ? `<div class="quiz-feedback ${feedback.correct ? 'correct' : 'wrong'}">${escapeHtml(feedback.feedback)}</div>` : ''}
         <button class="action-btn secondary" data-work-retry-check="${idx}|${num}" ${grading ? 'disabled' : ''}>${grading ? '採点中…' : 'こたえ合わせ'}</button>
@@ -388,7 +389,11 @@ function renderWorkPhotoBody(cfg, idx){
     `;
   }).join('');
 
-  return `${refHtml}<img class="photo-thumb" src="${s.photoDataUrl || ''}" alt="">` + retryHtml;
+  const finishHtml = allResolved
+    ? `<div class="warn-banner" style="background:var(--green-soft);color:var(--green);margin-top:10px;">🎉 やり直し完了です！</div><button class="action-btn secondary" data-work-reupload="${idx}" style="margin-top:8px;">🖼️ もう一度アップロードする(次の問題)</button>`
+    : '';
+
+  return `${refHtml}<img class="photo-thumb" src="${s.photoDataUrl || ''}" alt="">` + retryHtml + finishHtml;
 }
 
 function renderVideoLinkField(idx, savedLink){
@@ -1047,7 +1052,7 @@ async function renderRetryPage(){
     return;
   }
 
-  const allItems = []; // 解決済みも含めた全件(頻度計算用)
+  const allItems = [];
 
   submissions.forEach(s => {
     const marks = s.marks || {};
@@ -1089,7 +1094,6 @@ async function renderRetryPage(){
     return;
   }
 
-  // 重要度(=同じ問題を何度間違えているか)を計算
   const freqMap = {};
   allItems.forEach(it => { freqMap[it.dedupeKey] = (freqMap[it.dedupeKey] || 0) + 1; });
   allItems.forEach(it => { it.occurrences = freqMap[it.dedupeKey]; });
@@ -1103,11 +1107,9 @@ async function renderRetryPage(){
     return;
   }
 
-  // 科目ごとにグループ化
   const bySubject = {};
   unresolved.forEach(it => { (bySubject[it.subject] = bySubject[it.subject] || []).push(it); });
 
-  // グループ内を並べ替え:間違えた回数が多い順→古い日付が先
   Object.values(bySubject).forEach(arr => {
     arr.sort((a, b) => (b.occurrences - a.occurrences) || (a.date < b.date ? -1 : 1));
   });
@@ -1208,7 +1210,6 @@ async function renderRetryPage(){
     };
   });
 }
-
 
 // ================= 管理タブ: 分析 =================
 async function renderAnalysisPage(){
