@@ -99,7 +99,7 @@ function openQAModal(title, items){
 
 function printAttemptSheet(title, attempts, fallbackItems){
   const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:1400px;height:1000px;border:0;';
+  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:1000px;height:1400px;border:0;';
   document.body.appendChild(iframe);
   const doc = iframe.contentWindow.document;
 
@@ -129,13 +129,13 @@ function printAttemptSheet(title, attempts, fallbackItems){
   doc.write(`
     <html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
     <style>
-      @page { size: A4 landscape; margin: 8mm; }
+      @page { size: A4; margin: 10mm; }
       * { box-sizing: border-box; }
       html, body { width: 100%; margin:0; padding:0; }
       body { font-family: sans-serif; padding: 8px; color:#222; }
       h2 { margin: 0 0 8px; font-size:13px; }
       .cols {
-        column-count: 4;
+        column-count: 3;
         column-gap: 12px;
         column-fill: auto;
         width: 100%;
@@ -143,7 +143,7 @@ function printAttemptSheet(title, attempts, fallbackItems){
       .item {
         break-inside: avoid; -webkit-column-break-inside: avoid;
         padding: 1px 0 2px; border-bottom: 1px solid #e5e5e5;
-        font-size: 8px; line-height:1.25;
+        font-size: 9px; line-height:1.3;
       }
       .num { color:#999; margin-right:2px; }
       .prompt { font-weight:700; }
@@ -159,12 +159,18 @@ function printAttemptSheet(title, attempts, fallbackItems){
     </body></html>
   `);
   doc.close();
-  setTimeout(() => {
+
+  const doPrint = () => {
     iframe.contentWindow.focus();
     iframe.contentWindow.print();
     setTimeout(() => { document.body.removeChild(iframe); }, 3000);
-  }, 200);
+  };
+
+  // 内容量が多くても準備が整ってから印刷されるよう、読み込み完了を待つ
+  iframe.onload = () => { setTimeout(doPrint, 300); };
+  setTimeout(doPrint, 1200); // 念のためのフォールバック
 }
+
 
 function openAttemptLogModal(title, attempts, fallbackItems){
   const overlay = document.createElement('div');
