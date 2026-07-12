@@ -1067,6 +1067,38 @@ function printSubjectSheet(subject, items){
   }, 300);
 }
 
+function renderRetryItemBox(item){
+  const st = retryPageState[item.key] || {};
+  const grading = st.grading;
+  const badge = item.occurrences > 1 ? `<span style="background:#fde2e2;color:#c0392b;font-size:11px;padding:2px 6px;border-radius:8px;margin-left:6px;">${item.occurrences}回目</span>` : '';
+
+  if(item.resolved){
+    const val = item.savedAnswer || '';
+    return `
+      <div class="retry-box resolved">
+        <div class="num">${escapeHtml(item.task)} ${escapeHtml(item.num)}${badge} ✅ 直せました</div>
+        <div class="explain">${escapeHtml(item.explain)}</div>
+        <div class="retry-problem">${escapeHtml(item.retryProblem)}</div>
+        <input type="text" class="quiz-input correct" value="${escapeHtml(val)}" disabled>
+        <div class="quiz-feedback correct">正解です！</div>
+      </div>
+    `;
+  }
+
+  const feedback = st.feedback;
+  const val = st.answer != null ? st.answer : item.savedAnswer;
+  return `
+    <div class="retry-box">
+      <div class="num">${escapeHtml(item.task)} ${escapeHtml(item.num)}${badge}</div>
+      <div class="explain">${escapeHtml(item.explain)}</div>
+      <div class="retry-problem">${escapeHtml(item.retryProblem)}</div>
+      <input type="text" class="quiz-input ${feedback ? (feedback.correct ? 'correct' : 'wrong') : ''}" id="retry-page-input-${item.key}" value="${escapeHtml(val)}" placeholder="ここに答えを書いてね" ${grading ? 'disabled' : ''}>
+      ${feedback ? `<div class="quiz-feedback ${feedback.correct ? 'correct' : 'wrong'}">${escapeHtml(feedback.feedback)}</div>` : ''}
+      <button class="action-btn secondary" data-retry-page-check="${item.key}" ${grading ? 'disabled' : ''}>${grading ? '採点中…' : 'こたえ合わせ'}</button>
+    </div>
+  `;
+}
+
 async function renderRetryPage(){
   const listEl = document.getElementById('retry-list');
   listEl.innerHTML = '<div class="loading-state">読み込み中…</div>';
@@ -1163,34 +1195,12 @@ async function renderRetryPage(){
   if(!unresolvedItems.length){
     html += `<div class="warn-banner" style="background:var(--green-soft);color:var(--green);">🎉 この科目の未解決の間違いはありません</div>`;
   } else {
-    html += unresolvedItems.map((item) => {
-      const st = retryPageState[item.key] || {};
-      const feedback = st.feedback;
-      const grading = st.grading;
-      const val = st.answer != null ? st.answer : item.savedAnswer;
-      const badge = item.occurrences > 1 ? `<span style="background:#fde2e2;color:#c0392b;font-size:11px;padding:2px 6px;border-radius:8px;margin-left:6px;">${item.occurrences}回目</span>` : '';
-      return `
-        <div class="retry-box">
-          <div class="num">${escapeHtml(item.task)} ${escapeHtml(item.num)}${badge}</div>
-          <div class="explain">${escapeHtml(item.explain)}</div>
-          <div class="retry-problem">${escapeHtml(item.retryProblem)}</div>
-          <input type="text" class="quiz-input ${feedback ? (feedback.correct ? 'correct' : 'wrong') : ''}" id="retry-page-input-${item.key}" value="${escapeHtml(val)}" placeholder="ここに答えを書いてね" ${grading ? 'disabled' : ''}>
-          ${feedback ? `<div class="quiz-feedback ${feedback.correct ? 'correct' : 'wrong'}">${escapeHtml(feedback.feedback)}</div>` : ''}
-          <button class="action-btn secondary" data-retry-page-check="${item.key}" ${grading ? 'disabled' : ''}>${grading ? '採点中…' : 'こたえ合わせ'}</button>
-        </div>
-      `;
-    }).join('');
+    html += unresolvedItems.map(renderRetryItemBox).join('');
   }
 
   if(resolvedItems.length){
     html += `<div class="sub-note" style="margin:16px 0 8px;font-weight:600;">${escapeHtml(retryActiveSubject)}の解決済み ${resolvedItems.length}件</div>`;
-    html += resolvedItems.map(item => `
-      <div class="retry-box resolved">
-        <div class="num">${escapeHtml(item.task)} ${escapeHtml(item.num)} ✅ 直せました</div>
-        <div class="explain">${escapeHtml(item.explain)}</div>
-        <div class="retry-problem">${escapeHtml(item.retryProblem)}</div>
-      </div>
-    `).join('');
+    html += resolvedItems.map(renderRetryItemBox).join('');
   }
 
   listEl.innerHTML = html;
@@ -1258,6 +1268,7 @@ async function renderRetryPage(){
     };
   });
 }
+
 
 
 
