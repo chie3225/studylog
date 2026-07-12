@@ -1032,6 +1032,7 @@ function renderDayDetail(){
 
 // ================= 管理タブ: テスト前やり直し =================
 let retryPageState = {}; // key -> { grading:false, feedback:null, answer:'' }
+let retryActiveSubject = null;
 
 function buildDedupeKey(subject, task, text){
   return `${subject}|${task}|${(text || '').trim().toLowerCase()}`;
@@ -1114,38 +1115,56 @@ async function renderRetryPage(){
     arr.sort((a, b) => (b.occurrences - a.occurrences) || (a.date < b.date ? -1 : 1));
   });
 
+  const subjectNames = Object.keys(bySubject);
+  if(!retryActiveSubject || !bySubject[retryActiveSubject]){
+    retryActiveSubject = subjectNames[0];
+  }
+
   let html = `<div class="sub-note" style="margin-bottom:10px;font-weight:600;">未解決 ${unresolved.length}件</div>`;
 
-  Object.keys(bySubject).forEach(subject => {
-    const items = bySubject[subject];
-    html += `<div class="sub-note" style="margin:14px 0 8px;font-weight:700;font-size:15px;">📘 ${escapeHtml(subject)}(${items.length}件)</div>`;
-    html += items.map((item) => {
-      const st = retryPageState[item.key] || {};
-      const feedback = st.feedback;
-      const grading = st.grading;
-      const val = st.answer != null ? st.answer : item.savedAnswer;
-      const badge = item.occurrences > 1 ? `<span style="background:#fde2e2;color:#c0392b;font-size:11px;padding:2px 6px;border-radius:8px;margin-left:6px;">${item.occurrences}回目</span>` : '';
-      return `
-        <div class="retry-box">
-          <div class="num">${escapeHtml(item.task)} ${escapeHtml(item.num)}${badge}</div>
-          <div class="explain">${escapeHtml(item.explain)}</div>
-          <div class="retry-problem">${escapeHtml(item.retryProblem)}</div>
-          <input type="text" class="quiz-input ${feedback ? (feedback.correct ? 'correct' : 'wrong') : ''}" id="retry-page-input-${item.key}" value="${escapeHtml(val)}" placeholder="ここに答えを書いてね" ${grading ? 'disabled' : ''}>
-          ${feedback ? `<div class="quiz-feedback ${feedback.correct ? 'correct' : 'wrong'}">${escapeHtml(feedback.feedback)}</div>` : ''}
-          <div style="display:flex;gap:6px;margin-top:6px;">
-            <button class="action-btn secondary" style="flex:1;" data-retry-page-check="${item.key}" ${grading ? 'disabled' : ''}>${grading ? '採点中…' : 'こたえ合わせ'}</button>
-            <button class="action-btn secondary" style="flex:1;background:#f0f0f0;" data-retry-page-dismiss="${item.key}">✅ もう大丈夫</button>
-          </div>
+  // タブ
+  html += `<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:10px;">`;
+  html += subjectNames.map(subject => {
+    const active = subject === retryActiveSubject;
+    return `<button data-retry-tab="${escapeHtml(subject)}" style="flex-shrink:0;padding:8px 14px;border-radius:20px;border:none;font-size:14px;font-weight:600;cursor:pointer;background:${active ? '#333' : '#f0f0f0'};color:${active ? '#fff' : '#555'};">${escapeHtml(subject)}(${bySubject[subject].length})</button>`;
+  }).join('');
+  html += `</div>`;
+
+  // アクティブな科目だけ表示
+  const items = bySubject[retryActiveSubject] || [];
+  html += items.map((item) => {
+    const st = retryPageState[item.key] || {};
+    const feedback = st.feedback;
+    const grading = st.grading;
+    const val = st.answer != null ? st.answer : item.savedAnswer;
+    const badge = item.occurrences > 1 ? `<span style="background:#fde2e2;color:#c0392b;font-size:11px;padding:2px 6px;border-radius:8px;margin-left:6px;">${item.occurrences}回目</span>` : '';
+    return `
+      <div class="retry-box">
+        <div class="num">${escapeHtml(item.task)} ${escapeHtml(item.num)}${badge}</div>
+        <div class="explain">${escapeHtml(item.explain)}</div>
+        <div class="retry-problem">${escapeHtml(item.retryProblem)}</div>
+        <input type="text" class="quiz-input ${feedback ? (feedback.correct ? 'correct' : 'wrong') : ''}" id="retry-page-input-${item.key}" value="${escapeHtml(val)}" placeholder="ここに答えを書いてね" ${grading ? 'disabled' : ''}>
+        ${feedback ? `<div class="quiz-feedback ${feedback.correct ? 'correct' : 'wrong'}">${escapeHtml(feedback.feedback)}</div>` : ''}
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <button class="action-btn secondary" style="flex:1;" data-retry-page-check="${item.key}" ${grading ? 'disabled' : ''}>${grading ? '採点中…' : 'こたえ合わせ'}</button>
+          <button class="action-btn secondary" style="flex:1;background:#f0f0f0;" data-retry-page-dismiss="${item.key}">✅ もう大丈夫</button>
         </div>
-      `;
-    }).join('');
-  });
+      </div>
+    `;
+  }).join('');
 
   if(resolved.length){
     html += `<div class="sub-note" style="margin:16px 0 4px;font-weight:600;">解決済み ${resolved.length}件</div>`;
   }
 
   listEl.innerHTML = html;
+
+  document.querySelectorAll('[data-retry-tab]').forEach(el => {
+    el.onclick = () => {
+      retryActiveSubject = el.getAttribute('data-retry-tab');
+      renderRetryPage();
+    };
+  });
 
   async function resolveItem(item, extraAnswer){
     const submission = submissions.find(s => s.id === item.submissionId);
@@ -1164,7 +1183,7 @@ async function renderRetryPage(){
   document.querySelectorAll('[data-retry-page-dismiss]').forEach(el => {
     el.onclick = async () => {
       const key = el.getAttribute('data-retry-page-dismiss');
-      const item = unresolved.find(u => u.key === key);
+      const item = items.find(u => u.key === key);
       if(!item) return;
       await resolveItem(item, null);
       renderRetryPage();
@@ -1174,7 +1193,7 @@ async function renderRetryPage(){
   document.querySelectorAll('[data-retry-page-check]').forEach(el => {
     el.onclick = async () => {
       const key = el.getAttribute('data-retry-page-check');
-      const item = unresolved.find(u => u.key === key);
+      const item = items.find(u => u.key === key);
       if(!item) return;
       const inputEl = document.getElementById('retry-page-input-' + key);
       const typed = (inputEl ? inputEl.value : '').trim();
@@ -1210,6 +1229,7 @@ async function renderRetryPage(){
     };
   });
 }
+
 
 // ================= 管理タブ: 分析 =================
 async function renderAnalysisPage(){
