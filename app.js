@@ -1188,9 +1188,11 @@ async function renderRetryPage(){
       <div class="retry-box resolved">
         <div class="num">${escapeHtml(item.task)} ${escapeHtml(item.num)} ✅ 直せました</div>
         <div class="explain">${escapeHtml(item.explain)}</div>
+        <div class="retry-problem">${escapeHtml(item.retryProblem)}</div>
       </div>
     `).join('');
   }
+
 
   listEl.innerHTML = html;
 
