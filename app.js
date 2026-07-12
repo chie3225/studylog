@@ -1038,6 +1038,35 @@ function buildDedupeKey(subject, task, text){
   return `${subject}|${task}|${(text || '').trim().toLowerCase()}`;
 }
 
+function printSubjectSheet(subject, items){
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+  document.body.appendChild(iframe);
+  const doc = iframe.contentWindow.document;
+  const rows = items.map((it, i) => `
+    <div style="margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid #ccc;">
+      <div style="font-weight:bold;font-size:15px;">${i+1}. ${escapeHtml(it.task)} ${escapeHtml(it.num)}</div>
+      <div style="margin:8px 0;font-size:14px;">${escapeHtml(it.retryProblem)}</div>
+      ${it.explain ? `<div style="color:#666;font-size:12px;">${escapeHtml(it.explain)}</div>` : ''}
+      <div style="height:36px;margin-top:10px;"></div>
+    </div>
+  `).join('');
+  doc.open();
+  doc.write(`
+    <html><head><meta charset="utf-8"><title>${escapeHtml(subject)} やり直しシート</title></head>
+    <body style="font-family:sans-serif;padding:16px;color:#222;">
+      <h2 style="margin-bottom:16px;">${escapeHtml(subject)} やり直しシート(${items.length}問)</h2>
+      ${rows}
+    </body></html>
+  `);
+  doc.close();
+  setTimeout(() => {
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+    setTimeout(() => { document.body.removeChild(iframe); }, 1000);
+  }, 300);
+}
+
 async function renderRetryPage(){
   const listEl = document.getElementById('retry-list');
   listEl.innerHTML = '<div class="loading-state">読み込み中…</div>';
@@ -1099,62 +1128,68 @@ async function renderRetryPage(){
   allItems.forEach(it => { freqMap[it.dedupeKey] = (freqMap[it.dedupeKey] || 0) + 1; });
   allItems.forEach(it => { it.occurrences = freqMap[it.dedupeKey]; });
 
-  const unresolved = allItems.filter(it => !it.resolved);
-  const resolved = allItems.filter(it => it.resolved);
+  const bySubjectAll = {};
+  allItems.forEach(it => { (bySubjectAll[it.subject] = bySubjectAll[it.subject] || []).push(it); });
 
-  if(!unresolved.length){
-    listEl.innerHTML = `<div class="warn-banner" style="background:var(--green-soft);color:var(--green);">🎉 今のところ未解決の間違いはありません</div>` +
-      (resolved.length ? `<div class="sub-note" style="margin-top:10px;">解決済み ${resolved.length}件</div>` : '');
-    return;
-  }
-
-  const bySubject = {};
-  unresolved.forEach(it => { (bySubject[it.subject] = bySubject[it.subject] || []).push(it); });
-
-  Object.values(bySubject).forEach(arr => {
+  Object.values(bySubjectAll).forEach(arr => {
     arr.sort((a, b) => (b.occurrences - a.occurrences) || (a.date < b.date ? -1 : 1));
   });
 
-  const subjectNames = Object.keys(bySubject);
-  if(!retryActiveSubject || !bySubject[retryActiveSubject]){
+  const subjectNames = Object.keys(bySubjectAll);
+  if(!retryActiveSubject || !bySubjectAll[retryActiveSubject]){
     retryActiveSubject = subjectNames[0];
   }
 
-  let html = `<div class="sub-note" style="margin-bottom:10px;font-weight:600;">未解決 ${unresolved.length}件</div>`;
+  const totalUnresolved = allItems.filter(it => !it.resolved).length;
 
-  // タブ
+  let html = `<div class="sub-note" style="margin-bottom:10px;font-weight:600;">未解決 ${totalUnresolved}件</div>`;
+
   html += `<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:10px;">`;
   html += subjectNames.map(subject => {
     const active = subject === retryActiveSubject;
-    return `<button data-retry-tab="${escapeHtml(subject)}" style="flex-shrink:0;padding:8px 14px;border-radius:20px;border:none;font-size:14px;font-weight:600;cursor:pointer;background:${active ? '#333' : '#f0f0f0'};color:${active ? '#fff' : '#555'};">${escapeHtml(subject)}(${bySubject[subject].length})</button>`;
+    const count = bySubjectAll[subject].filter(it => !it.resolved).length;
+    return `<button data-retry-tab="${escapeHtml(subject)}" style="flex-shrink:0;padding:8px 14px;border-radius:20px;border:none;font-size:14px;font-weight:600;cursor:pointer;background:${active ? '#333' : '#f0f0f0'};color:${active ? '#fff' : '#555'};">${escapeHtml(subject)}(${count})</button>`;
   }).join('');
   html += `</div>`;
 
-  // アクティブな科目だけ表示
-  const items = bySubject[retryActiveSubject] || [];
-  html += items.map((item) => {
-    const st = retryPageState[item.key] || {};
-    const feedback = st.feedback;
-    const grading = st.grading;
-    const val = st.answer != null ? st.answer : item.savedAnswer;
-    const badge = item.occurrences > 1 ? `<span style="background:#fde2e2;color:#c0392b;font-size:11px;padding:2px 6px;border-radius:8px;margin-left:6px;">${item.occurrences}回目</span>` : '';
-    return `
-      <div class="retry-box">
-        <div class="num">${escapeHtml(item.task)} ${escapeHtml(item.num)}${badge}</div>
-        <div class="explain">${escapeHtml(item.explain)}</div>
-        <div class="retry-problem">${escapeHtml(item.retryProblem)}</div>
-        <input type="text" class="quiz-input ${feedback ? (feedback.correct ? 'correct' : 'wrong') : ''}" id="retry-page-input-${item.key}" value="${escapeHtml(val)}" placeholder="ここに答えを書いてね" ${grading ? 'disabled' : ''}>
-        ${feedback ? `<div class="quiz-feedback ${feedback.correct ? 'correct' : 'wrong'}">${escapeHtml(feedback.feedback)}</div>` : ''}
-        <div style="display:flex;gap:6px;margin-top:6px;">
-          <button class="action-btn secondary" style="flex:1;" data-retry-page-check="${item.key}" ${grading ? 'disabled' : ''}>${grading ? '採点中…' : 'こたえ合わせ'}</button>
-          <button class="action-btn secondary" style="flex:1;background:#f0f0f0;" data-retry-page-dismiss="${item.key}">✅ もう大丈夫</button>
-        </div>
-      </div>
-    `;
-  }).join('');
+  const subjectItems = bySubjectAll[retryActiveSubject] || [];
+  const unresolvedItems = subjectItems.filter(it => !it.resolved);
+  const resolvedItems = subjectItems.filter(it => it.resolved);
 
-  if(resolved.length){
-    html += `<div class="sub-note" style="margin:16px 0 4px;font-weight:600;">解決済み ${resolved.length}件</div>`;
+  if(unresolvedItems.length){
+    html += `<button class="action-btn secondary" data-retry-print="${escapeHtml(retryActiveSubject)}" style="margin-bottom:12px;">📄 ${escapeHtml(retryActiveSubject)}のPDFで保存(${unresolvedItems.length}問)</button>`;
+  }
+
+  if(!unresolvedItems.length){
+    html += `<div class="warn-banner" style="background:var(--green-soft);color:var(--green);">🎉 この科目の未解決の間違いはありません</div>`;
+  } else {
+    html += unresolvedItems.map((item) => {
+      const st = retryPageState[item.key] || {};
+      const feedback = st.feedback;
+      const grading = st.grading;
+      const val = st.answer != null ? st.answer : item.savedAnswer;
+      const badge = item.occurrences > 1 ? `<span style="background:#fde2e2;color:#c0392b;font-size:11px;padding:2px 6px;border-radius:8px;margin-left:6px;">${item.occurrences}回目</span>` : '';
+      return `
+        <div class="retry-box">
+          <div class="num">${escapeHtml(item.task)} ${escapeHtml(item.num)}${badge}</div>
+          <div class="explain">${escapeHtml(item.explain)}</div>
+          <div class="retry-problem">${escapeHtml(item.retryProblem)}</div>
+          <input type="text" class="quiz-input ${feedback ? (feedback.correct ? 'correct' : 'wrong') : ''}" id="retry-page-input-${item.key}" value="${escapeHtml(val)}" placeholder="ここに答えを書いてね" ${grading ? 'disabled' : ''}>
+          ${feedback ? `<div class="quiz-feedback ${feedback.correct ? 'correct' : 'wrong'}">${escapeHtml(feedback.feedback)}</div>` : ''}
+          <button class="action-btn secondary" data-retry-page-check="${item.key}" ${grading ? 'disabled' : ''}>${grading ? '採点中…' : 'こたえ合わせ'}</button>
+        </div>
+      `;
+    }).join('');
+  }
+
+  if(resolvedItems.length){
+    html += `<div class="sub-note" style="margin:16px 0 8px;font-weight:600;">${escapeHtml(retryActiveSubject)}の解決済み ${resolvedItems.length}件</div>`;
+    html += resolvedItems.map(item => `
+      <div class="retry-box resolved">
+        <div class="num">${escapeHtml(item.task)} ${escapeHtml(item.num)} ✅ 直せました</div>
+        <div class="explain">${escapeHtml(item.explain)}</div>
+      </div>
+    `).join('');
   }
 
   listEl.innerHTML = html;
@@ -1166,34 +1201,17 @@ async function renderRetryPage(){
     };
   });
 
-  async function resolveItem(item, extraAnswer){
-    const submission = submissions.find(s => s.id === item.submissionId);
-    const resolvedKey = item.isQuiz ? item.quizKey : item.num;
-    const mergedResolved = Object.assign({}, (submission && submission.retry_resolved) || {}, { [resolvedKey]: true });
-    const patchBody = { id: item.submissionId, retry_resolved: mergedResolved };
-    if(item.isMath && extraAnswer != null){
-      const mergedAnswers = Object.assign({}, (submission && submission.retry_answers) || {}, { [item.num]: extraAnswer });
-      patchBody.retry_answers = mergedAnswers;
-    }
-    try{
-      await apiCall('/api/submissions', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patchBody) });
-    }catch(e){ /* ignore */ }
-  }
-
-  document.querySelectorAll('[data-retry-page-dismiss]').forEach(el => {
-    el.onclick = async () => {
-      const key = el.getAttribute('data-retry-page-dismiss');
-      const item = items.find(u => u.key === key);
-      if(!item) return;
-      await resolveItem(item, null);
-      renderRetryPage();
+  const printBtn = listEl.querySelector('[data-retry-print]');
+  if(printBtn){
+    printBtn.onclick = () => {
+      printSubjectSheet(retryActiveSubject, unresolvedItems);
     };
-  });
+  }
 
   document.querySelectorAll('[data-retry-page-check]').forEach(el => {
     el.onclick = async () => {
       const key = el.getAttribute('data-retry-page-check');
-      const item = items.find(u => u.key === key);
+      const item = unresolvedItems.find(u => u.key === key);
       if(!item) return;
       const inputEl = document.getElementById('retry-page-input-' + key);
       const typed = (inputEl ? inputEl.value : '').trim();
@@ -1222,13 +1240,24 @@ async function renderRetryPage(){
       retryPageState[key] = { grading:false, feedback:result, answer: typed };
 
       if(result.correct){
-        await resolveItem(item, typed);
+        const submission = submissions.find(s => s.id === item.submissionId);
+        const resolvedKey = item.isQuiz ? item.quizKey : item.num;
+        const mergedResolved = Object.assign({}, (submission && submission.retry_resolved) || {}, { [resolvedKey]: true });
+        const patchBody = { id: item.submissionId, retry_resolved: mergedResolved };
+        if(item.isMath){
+          const mergedAnswers = Object.assign({}, (submission && submission.retry_answers) || {}, { [item.num]: typed });
+          patchBody.retry_answers = mergedAnswers;
+        }
+        try{
+          await apiCall('/api/submissions', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patchBody) });
+        }catch(e){ /* ignore */ }
       }
 
       renderRetryPage();
     };
   });
 }
+
 
 
 // ================= 管理タブ: 分析 =================
