@@ -49,6 +49,52 @@ function escapeHtml(str){
   return div.innerHTML;
 }
 
+// ---------- 画像プレビュー(ライトボックス) ----------
+function openImageLightbox(src){
+  if(!src) return;
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  const img = document.createElement('img');
+  img.src = src;
+  img.style.cssText = 'max-width:100%;max-height:100%;border-radius:10px;';
+  overlay.appendChild(img);
+  overlay.onclick = () => overlay.remove();
+  document.body.appendChild(overlay);
+}
+
+function attachImagePreviewHandlers(selector){
+  document.querySelectorAll(selector).forEach(img => {
+    img.style.cursor = 'zoom-in';
+    img.onclick = (e) => { e.stopPropagation(); openImageLightbox(img.src); };
+  });
+}
+
+// ---------- 問題と解答の一覧プレビュー ----------
+function openQAModal(title, items){
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#fff;border-radius:14px;padding:16px;max-width:480px;width:100%;margin-top:36px;box-shadow:0 8px 30px rgba(0,0,0,0.2);';
+  const rows = (items || []).map((it, i) => `
+    <div style="padding:10px 0;border-bottom:1px solid #eee;">
+      <div style="font-size:12px;color:#888;">問${i+1}</div>
+      <div style="font-weight:600;margin:2px 0;">${escapeHtml(it.prompt)}</div>
+      <div style="color:#2a8a5a;">→ ${escapeHtml(it.answer)}</div>
+    </div>
+  `).join('');
+  box.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div style="font-weight:700;">${escapeHtml(title)}</div>
+      <div data-close-modal style="font-size:20px;padding:4px 10px;cursor:pointer;color:#888;">✕</div>
+    </div>
+    <div>${rows || '<div class="empty-state">問題の記録がありません</div>'}</div>
+  `;
+  overlay.appendChild(box);
+  overlay.onclick = (e) => { if(e.target === overlay) overlay.remove(); };
+  box.querySelector('[data-close-modal]').onclick = () => overlay.remove();
+  document.body.appendChild(overlay);
+}
+
 function resizeImage(file, maxDim, quality){
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -162,6 +208,10 @@ async function initStudentView(){
       s.started = true;
       s.done = true;
       s.wrongItems = (existing.quiz_result && existing.quiz_result.wrongItems) || [];
+      const restoredItems = (existing.quiz_result && existing.quiz_result.items) || [];
+      const promptKey = QUIZ_PROMPT_KEY[cfg.type];
+      const answerKey = QUIZ_ANSWER_KEY[cfg.type];
+      s.rawItems = restoredItems.map((it, i) => ({ [promptKey]: it.prompt, [answerKey]: it.answer, _id: i }));
     }
   });
 
@@ -185,6 +235,7 @@ function renderAll(){
 
   listEl.innerHTML = visible.map(({cfg, idx}) => renderSubjectRow(cfg, idx)).join('');
   attachSubjectHandlers();
+  attachImagePreviewHandlers('.photo-thumb');
 }
 
 function getStatus(cfg, idx){
@@ -250,7 +301,7 @@ function renderWorkPhotoBody(cfg, idx){
 
   const wrongNums = Object.keys(s.marks).filter(k => s.marks[k] === '×' || s.marks[k] === '✕');
   if(!wrongNums.length){
-    return `${refHtml}<img class="photo-thumb" src="${s.photoDataUrl || ''}" alt=""><div class="warn-banner" style="background:var(--green-soft);color:var(--green);margin-top:10px;">🎉 全問○がついていました！この教科は完了です</div>`;
+    return `${refHtml}<img class="photo-thumb" src="${s.photoDataUrl || ''}" alt=""><div class="warn-banner" style="background:var(--green-soft);color:var(--green);margin-top:10px;">🎉 全問○がついていました！この教科は完了です</div><button class="action-btn secondary" data-work-reupload="${idx}" style="margin-top:8px;">🖼️ もう一度アップロードする</button>`;
   }
 
   const retryHtml = wrongNums.map((num) => {
@@ -308,6 +359,7 @@ function renderQuizBody(cfg, idx){
       <img class="photo-thumb" src="${s.photoDataUrl || ''}" alt="">
       <div class="sub-note" style="margin:10px 0;">画像から${s.rawItems.length}問を作成しました</div>
       <button class="action-btn" data-quiz-start="${idx}">スタート</button>
+      <button class="action-btn secondary" data-quiz-preview="${idx}" style="margin-top:8px;">📋 問題と解答を確認する</button>
     `;
   }
 
@@ -316,7 +368,8 @@ function renderQuizBody(cfg, idx){
     return `
       <div class="quiz-done-banner">${doneMessage}（間違えた数: ${s.wrongItems.length}個）</div>
       ${canRestart
-        ? `<button class="action-btn secondary" data-quiz-restart="${idx}" style="margin-top:8px;">🔁 もう一度チャレンジする</button>`
+        ? `<button class="action-btn secondary" data-quiz-restart="${idx}" style="margin-top:8px;">🔁 もう一度チャレンジする</button>
+           <button class="action-btn secondary" data-quiz-preview="${idx}" style="margin-top:8px;">📋 問題と解答を確認する</button>`
         : `<div class="sub-note" style="margin-top:8px;">もう一度やり直すには、画像をアップロードし直してね</div><button class="photo-btn" data-quiz-reupload="${idx}" style="margin-top:6px;">${uploadLabel}</button>`
       }
     `;
@@ -464,6 +517,19 @@ function attachSubjectHandlers(){
     };
   });
 
+  document.querySelectorAll('[data-quiz-preview]').forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      const idx = Number(el.getAttribute('data-quiz-preview'));
+      const s = state[idx];
+      const cfg = subjectsConfig[idx];
+      const promptKey = QUIZ_PROMPT_KEY[cfg.type];
+      const answerKey = QUIZ_ANSWER_KEY[cfg.type];
+      const items = (s.rawItems || []).map(it => ({ prompt: it[promptKey], answer: it[answerKey] }));
+      openQAModal(`${cfg.subject} ${cfg.task}`, items);
+    };
+  });
+
   document.querySelectorAll('[data-quiz-submit]').forEach(el => {
     el.onclick = (e) => {
       e.stopPropagation();
@@ -599,6 +665,8 @@ async function handleQuizUpload(idx){
 async function saveQuizSubmission(idx){
   const cfg = subjectsConfig[idx];
   const s = state[idx];
+  const promptKey = QUIZ_PROMPT_KEY[cfg.type];
+  const answerKey = QUIZ_ANSWER_KEY[cfg.type];
   const now = new Date();
   try{
     await apiCall('/api/submissions', {
@@ -606,7 +674,10 @@ async function saveQuizSubmission(idx){
       body: JSON.stringify({
         date: todayISO(now), time: now.toISOString(), subject: cfg.subject, task: cfg.task,
         type: cfg.type, photo: s.photoDataUrl || '',
-        quiz_result: { total: s.rawItems.length, wrongCount: s.wrongItems.length, wrongItems: s.wrongItems }
+        quiz_result: {
+          total: s.rawItems.length, wrongCount: s.wrongItems.length, wrongItems: s.wrongItems,
+          items: s.rawItems.map(it => ({ prompt: it[promptKey], answer: it[answerKey] }))
+        }
       })
     });
   }catch(err){ /* 保存に失敗しても画面上の完了表示は維持する */ }
@@ -767,6 +838,10 @@ function renderDayDetail(){
         const correctCount = s.quiz_result.total - (s.quiz_result.wrongCount || 0);
         sub2 = `${correctCount}/${s.quiz_result.total} 正解`;
       }
+      const hasQaItems = s.quiz_result && Array.isArray(s.quiz_result.items) && s.quiz_result.items.length;
+      const qaBtn = hasQaItems
+        ? `<button class="action-btn secondary" data-day-qa="${s.id}" style="margin-top:6px;font-size:12px;padding:8px 10px;">📋 問題と解答を見る</button>`
+        : '';
       return `
         <div class="sub-block">
           <div class="sub-block-head">
@@ -776,6 +851,7 @@ function renderDayDetail(){
               <div class="sub-time">${escapeHtml(s.task)} ・ ${sub2}</div>
             </div>
           </div>
+          ${qaBtn}
         </div>
       `;
     }).join('');
@@ -814,6 +890,17 @@ function renderDayDetail(){
       }catch(err){ /* 失敗時は何もしない */ }
     };
   });
+
+  document.querySelectorAll('[data-day-qa]').forEach(el => {
+    el.onclick = () => {
+      const id = el.getAttribute('data-day-qa');
+      const sub = calendarCache.submissions.find(x => String(x.id) === String(id));
+      if(!sub) return;
+      openQAModal(`${sub.subject} ${sub.task}`, sub.quiz_result.items || []);
+    };
+  });
+
+  attachImagePreviewHandlers('.sub-thumb');
 }
 
 // ================= 管理タブ: テスト前やり直し =================
