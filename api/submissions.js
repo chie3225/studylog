@@ -11,7 +11,7 @@ module.exports = async (req, res) => {
   }
 
   if (req.method === 'POST') {
-    const { date, time, subject, task, type, photo, marks, explanations, retry_problems, retry_answers, retry_resolved, quiz_result } = req.body || {};
+    const { date, time, subject, task, type, photo, marks, explanations, retry_problems, retry_answers, retry_resolved, retry_dismissed, quiz_result } = req.body || {};
     if (!date || !time || !subject || !task || !type) {
       res.status(400).json({ error: 'date, time, subject, task, type は必須です' });
       return;
@@ -27,6 +27,7 @@ module.exports = async (req, res) => {
           retry_problems: retry_problems || {},
           retry_answers: retry_answers || {},
           retry_resolved: retry_resolved || {},
+          retry_dismissed: retry_dismissed || {},
           quiz_result: quiz_result || {},
         },
       ])
@@ -40,14 +41,15 @@ module.exports = async (req, res) => {
   }
 
   if (req.method === 'PATCH') {
-    const { id, retry_resolved, retry_answers } = req.body || {};
-    if (!id || (!retry_resolved && !retry_answers)) {
-      res.status(400).json({ error: 'id と、retry_resolved または retry_answers のいずれかが必要です' });
+    const { id, retry_resolved, retry_answers, retry_dismissed } = req.body || {};
+    if (!id || (!retry_resolved && !retry_answers && !retry_dismissed)) {
+      res.status(400).json({ error: 'id と、retry_resolved・retry_answers・retry_dismissed のいずれかが必要です' });
       return;
     }
     const updates = {};
     if (retry_resolved) updates.retry_resolved = retry_resolved;
     if (retry_answers) updates.retry_answers = retry_answers;
+    if (retry_dismissed) updates.retry_dismissed = retry_dismissed;
     const { error } = await supabase.from('submissions').update(updates).eq('id', id);
     if (error) {
       res.status(500).json({ error: error.message });
