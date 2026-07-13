@@ -166,11 +166,9 @@ function printAttemptSheet(title, attempts, fallbackItems){
     setTimeout(() => { document.body.removeChild(iframe); }, 3000);
   };
 
-  // 内容量が多くても準備が整ってから印刷されるよう、読み込み完了を待つ
   iframe.onload = () => { setTimeout(doPrint, 300); };
-  setTimeout(doPrint, 1200); // 念のためのフォールバック
+  setTimeout(doPrint, 1200);
 }
-
 
 function openAttemptLogModal(title, attempts, fallbackItems){
   const overlay = document.createElement('div');
@@ -804,7 +802,7 @@ async function handleWorkPhotoUpload(idx){
         body: JSON.stringify({
           date: todayISO(now), time: now.toISOString(), subject: cfg.subject, task: cfg.task,
           type:'work-photo', photo: dataUrl, marks: s.marks, explanations: s.explanations,
-          retry_problems: s.retryProblems, retry_answers: {}, retry_resolved: {}
+          retry_problems: s.retryProblems, retry_answers: {}, retry_resolved: {}, retry_dismissed: {}
         })
       });
       s.submissionId = saved.submission.id;
@@ -1185,15 +1183,15 @@ async function bulkDismissItems(items, submissions){
 
   for(const submissionId of Object.keys(bySubmission)){
     const submission = submissions.find(s => String(s.id) === String(submissionId));
-    const mergedResolved = Object.assign({}, (submission && submission.retry_resolved) || {});
+    const mergedDismissed = Object.assign({}, (submission && submission.retry_dismissed) || {});
     bySubmission[submissionId].forEach(it => {
       const key = it.isQuiz ? it.quizKey : it.num;
-      mergedResolved[key] = true;
+      mergedDismissed[key] = true;
     });
     try{
       await apiCall('/api/submissions', {
         method:'PATCH', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ id: Number(submissionId) || submissionId, retry_resolved: mergedResolved })
+        body: JSON.stringify({ id: Number(submissionId) || submissionId, retry_dismissed: mergedDismissed })
       });
     }catch(e){ /* ignore */ }
   }
@@ -1219,11 +1217,13 @@ async function renderRetryPage(){
   submissions.forEach(s => {
     const marks = s.marks || {};
     const retryResolved = s.retry_resolved || {};
+    const retryDismissed = s.retry_dismissed || {};
     const retryProblems = s.retry_problems || {};
     const retryAnswers = s.retry_answers || {};
 
     Object.keys(marks).forEach(num => {
       if(marks[num] !== '×' && marks[num] !== '✕') return;
+      if(retryDismissed[num]) return;
       const rp = retryProblems[num] || {};
       const problemText = typeof rp === 'string' ? rp : (rp.problem || '');
       const modelAnswer = typeof rp === 'string' ? '' : (rp.answer || '');
@@ -1240,6 +1240,7 @@ async function renderRetryPage(){
     if(s.quiz_result && Array.isArray(s.quiz_result.wrongItems)){
       s.quiz_result.wrongItems.forEach((w, i) => {
         const key = 'q' + i;
+        if(retryDismissed[key]) return;
         allItems.push({
           key: `z-${s.id}-${key}`, submissionId: s.id, subject: s.subject, task: s.task, num:'', date: s.date,
           explain: `問題「${w.prompt}」`, retryProblem: w.prompt, modelAnswer: w.answer,
@@ -1351,12 +1352,21 @@ async function renderRetryPage(){
     }catch(e){ /* ignore */ }
   }
 
+  async function dismissItem(item){
+    const submission = submissions.find(s => s.id === item.submissionId);
+    const key = item.isQuiz ? item.quizKey : item.num;
+    const mergedDismissed = Object.assign({}, (submission && submission.retry_dismissed) || {}, { [key]: true });
+    try{
+      await apiCall('/api/submissions', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: item.submissionId, retry_dismissed: mergedDismissed }) });
+    }catch(e){ /* ignore */ }
+  }
+
   document.querySelectorAll('[data-retry-page-dismiss]').forEach(el => {
     el.onclick = async () => {
       const key = el.getAttribute('data-retry-page-dismiss');
       const item = subjectItems.find(u => u.key === key);
       if(!item) return;
-      await resolveItem(item, null);
+      await dismissItem(item);
       renderRetryPage();
     };
   });
