@@ -72,6 +72,27 @@ function attachImagePreviewHandlers(selector){
   });
 }
 
+// 画像を保存できるように、新しいタブでフル表示する(そこで長押し→「写真に追加」で保存できる)
+function openImageForSave(dataUrl){
+  if(!dataUrl) return;
+  const win = window.open();
+  if(win){
+    win.document.write(`
+      <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+      <title>画像を保存</title></head>
+      <body style="margin:0;background:#111;display:flex;flex-direction:column;align-items:center;">
+        <div style="color:#fff;font-family:sans-serif;font-size:14px;padding:14px;text-align:center;">
+          この画像を長押しして「写真に追加」を選ぶと保存できます
+        </div>
+        <img src="${dataUrl}" style="max-width:100%;height:auto;display:block;" />
+      </body></html>
+    `);
+    win.document.close();
+  } else {
+    openImageLightbox(dataUrl);
+  }
+}
+
 function openQAModal(title, items){
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;';
@@ -332,6 +353,7 @@ async function initStudentView(){
       s.uploaded = true;
       s.started = true;
       s.done = true;
+      s.photoDataUrl = existing.photo || '';
       s.wrongItems = (existing.quiz_result && existing.quiz_result.wrongItems) || [];
       const restoredItems = (existing.quiz_result && existing.quiz_result.items) || [];
       s.attemptLog = (existing.quiz_result && existing.quiz_result.attempts) || [];
@@ -487,6 +509,10 @@ function renderQuizBody(cfg, idx){
   const subLabel = QUIZ_SUBLABEL[cfg.type];
   const uploadLabel = QUIZ_UPLOAD_LABEL[cfg.type];
   const doneMessage = QUIZ_DONE_MESSAGE[cfg.type];
+  const isPrep = cfg.type === 'prep-quiz';
+  const saveImageBtn = (isPrep && s.photoDataUrl)
+    ? `<button class="action-btn secondary" data-save-photo="${idx}" style="margin-top:8px;">🖼️ 画像を保存する</button>`
+    : '';
 
   if(s.uploading){
     return `<div class="sub-note" style="text-align:center;padding:12px 0;"><span class="spinner dark"></span>問題を作成しています…</div>`;
@@ -502,18 +528,21 @@ function renderQuizBody(cfg, idx){
       <div class="sub-note" style="margin:10px 0;">画像から${s.rawItems.length}問を作成しました</div>
       <button class="action-btn" data-quiz-start="${idx}">スタート</button>
       <button class="action-btn secondary" data-quiz-preview="${idx}" style="margin-top:8px;">📋 問題と解答を確認する</button>
+      ${saveImageBtn}
     `;
   }
 
   if(s.done){
     const canRestart = Array.isArray(s.rawItems) && s.rawItems.length > 0;
     return `
+      ${isPrep && s.photoDataUrl ? `<img class="photo-thumb" src="${s.photoDataUrl}" alt="">` : ''}
       <div class="quiz-done-banner">${doneMessage}（間違えた数: ${s.wrongItems.length}個）</div>
       ${canRestart
         ? `<button class="action-btn secondary" data-quiz-restart="${idx}" style="margin-top:8px;">🔁 もう一度チャレンジする</button>
            <button class="action-btn secondary" data-quiz-preview="${idx}" style="margin-top:8px;">📋 問題と解答を確認する</button>`
         : `<div class="sub-note" style="margin-top:8px;">もう一度やり直すには、画像をアップロードし直してね</div><button class="photo-btn" data-quiz-reupload="${idx}" style="margin-top:6px;">${uploadLabel}</button>`
       }
+      ${saveImageBtn}
     `;
   }
 
@@ -701,6 +730,15 @@ function attachSubjectHandlers(){
       const answerKey = QUIZ_ANSWER_KEY[cfg.type];
       const items = (s.rawItems || []).map(it => ({ prompt: it[promptKey], answer: it[answerKey] }));
       openQAModal(`${cfg.subject} ${cfg.task}`, items);
+    };
+  });
+
+  document.querySelectorAll('[data-save-photo]').forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      const idx = Number(el.getAttribute('data-save-photo'));
+      const s = state[idx];
+      openImageForSave(s.photoDataUrl);
     };
   });
 
@@ -1439,4 +1477,3 @@ async function renderAnalysisPage(){
     listEl.innerHTML = `<div class="empty-state">分析エラー: ${escapeHtml(err.message)}</div>`;
   }
 }
-
