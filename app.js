@@ -519,7 +519,7 @@ function renderQuizBody(cfg, idx){
 
   if(!s.uploaded){
     const photoOnlyBtn = isPrep
-      ? `<button class="action-btn secondary" data-quiz-photo-only="${idx}" style="margin-top:8px;">📷 プリントの写真だけ保存する(クイズなし)</button>`
+      ? `<button class="action-btn secondary" data-quiz-photo-only="${idx}" style="margin-top:8px;">📷 プリントの写真だけ保存する</button>`
       : '';
     return `<button class="photo-btn" data-quiz-upload="${idx}">${uploadLabel}</button>${photoOnlyBtn}${s.errorMsg ? `<div class="error-text">${escapeHtml(s.errorMsg)}</div>` : ''}`;
   }
