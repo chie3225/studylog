@@ -1439,3 +1439,4 @@ async function renderAnalysisPage(){
     listEl.innerHTML = `<div class="empty-state">分析エラー: ${escapeHtml(err.message)}</div>`;
   }
 }
+
