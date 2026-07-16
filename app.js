@@ -72,7 +72,6 @@ function attachImagePreviewHandlers(selector){
   });
 }
 
-// 画像を保存できるように、新しいタブでフル表示する(そこで長押し→「写真に追加」で保存できる)
 function openImageForSave(dataUrl){
   if(!dataUrl) return;
   const win = window.open();
@@ -519,7 +518,10 @@ function renderQuizBody(cfg, idx){
   }
 
   if(!s.uploaded){
-    return `<button class="photo-btn" data-quiz-upload="${idx}">${uploadLabel}</button>${s.errorMsg ? `<div class="error-text">${escapeHtml(s.errorMsg)}</div>` : ''}`;
+    const photoOnlyBtn = isPrep
+      ? `<button class="action-btn secondary" data-quiz-photo-only="${idx}" style="margin-top:8px;">📷 プリントの写真だけ保存する(クイズなし)</button>`
+      : '';
+    return `<button class="photo-btn" data-quiz-upload="${idx}">${uploadLabel}</button>${photoOnlyBtn}${s.errorMsg ? `<div class="error-text">${escapeHtml(s.errorMsg)}</div>` : ''}`;
   }
 
   if(!s.started){
@@ -536,7 +538,7 @@ function renderQuizBody(cfg, idx){
     const canRestart = Array.isArray(s.rawItems) && s.rawItems.length > 0;
     return `
       ${isPrep && s.photoDataUrl ? `<img class="photo-thumb" src="${s.photoDataUrl}" alt="">` : ''}
-      <div class="quiz-done-banner">${doneMessage}（間違えた数: ${s.wrongItems.length}個）</div>
+      <div class="quiz-done-banner">${doneMessage}${canRestart ? `（間違えた数: ${s.wrongItems.length}個）` : ''}</div>
       ${canRestart
         ? `<button class="action-btn secondary" data-quiz-restart="${idx}" style="margin-top:8px;">🔁 もう一度チャレンジする</button>
            <button class="action-btn secondary" data-quiz-preview="${idx}" style="margin-top:8px;">📋 問題と解答を確認する</button>`
@@ -674,6 +676,14 @@ function attachSubjectHandlers(){
       e.stopPropagation();
       const idx = Number(el.getAttribute('data-quiz-upload'));
       await handleQuizUpload(idx);
+    };
+  });
+
+  document.querySelectorAll('[data-quiz-photo-only]').forEach(el => {
+    el.onclick = async (e) => {
+      e.stopPropagation();
+      const idx = Number(el.getAttribute('data-quiz-photo-only'));
+      await handlePhotoOnlyUpload(idx);
     };
   });
 
@@ -876,6 +886,38 @@ async function handleQuizUpload(idx){
     s.correctCounts = {};
     s.attemptLog = [];
     s.uploaded = true;
+  }catch(err){
+    s.errorMsg = err.message;
+    s.uploaded = false;
+  }finally{
+    s.uploading = false;
+    renderAll();
+  }
+}
+
+// プリントの写真だけ保存する(クイズを作らず、そのまま「完了」にする)
+async function handlePhotoOnlyUpload(idx){
+  const s = state[idx];
+  const file = await pickImageFile();
+  if(!file) return;
+
+  s.uploading = true; s.errorMsg = null;
+  renderAll();
+
+  try{
+    const { dataUrl } = await resizeImage(file, 1000, 0.65);
+    s.photoDataUrl = dataUrl;
+    s.uploaded = true;
+    s.started = true;
+    s.done = true;
+    s.rawItems = [];
+    s.queue = [];
+    s.current = null;
+    s.wrongItems = [];
+    s.attemptLog = [];
+    s.correctCounts = {};
+    renderAll();
+    await saveQuizSubmission(idx);
   }catch(err){
     s.errorMsg = err.message;
     s.uploaded = false;
